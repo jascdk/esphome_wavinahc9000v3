@@ -37,7 +37,7 @@ async def to_code(config):
     hub = await cg.get_variable(config[CONF_PARENT_ID])
 
     var = cg.new_Pvariable(config[CONF_ID])
-    await climate.register_climate(var, {CONF_NAME: config[CONF_NAME]})
+    await climate.register_climate(var, config)
     cg.add(var.set_parent(hub))
 
     # Single channel or group
