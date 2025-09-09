@@ -4,9 +4,7 @@ esphome:
   board: esp32dev
 
 external_components:
-  - source:
-      type: local
-      path: ./esphome/components
+  - source: github://heinekmadsen/esphome_wavinahc9000v3@main
     components: [wavin_ahc9000]
 
 logger:
@@ -29,7 +27,7 @@ wavin_ahc9000:
     - name: "Living Area"
       members: [1,2]
   channel_names:
-    - channel: 1
+    - channel: 4
       name: "Kitchen"
     - channel: 3
       name: "Bathroom"

@@ -24,9 +24,7 @@ esphome:
   board: esp32dev
 
 external_components:
-  - source: 
-      type: local
-      path: ./esphome/components
+  - source: github://heinekmadsen/esphome_wavinahc9000v3@main
     components: [wavin_ahc9000]
 
 uart:
