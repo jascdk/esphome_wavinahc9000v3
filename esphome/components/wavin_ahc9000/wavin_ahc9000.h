@@ -62,6 +62,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
     climate::ClimateMode mode{climate::CLIMATE_MODE_HEAT};
     climate::ClimateAction action{climate::CLIMATE_ACTION_OFF};
     uint8_t battery_pct{255}; // 0..100; 255=unknown
+  uint16_t primary_index{0};
+  bool all_tp_lost{false};
   };
 
   std::map<uint8_t, ChannelState> channels_;
@@ -75,6 +77,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   GPIOPin *tx_enable_pin_{nullptr};
   uint8_t poll_channels_per_cycle_{2};
   uint8_t next_channel_{0};
+  uint8_t channel_step_[16] = {0};
 
   // Protocol constants
   static constexpr uint8_t DEVICE_ADDR = 0x01;

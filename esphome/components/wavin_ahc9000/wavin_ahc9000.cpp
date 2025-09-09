@@ -20,11 +20,15 @@ void WavinAHC9000::loop() {
 }
 
 void WavinAHC9000::update() {
-  // Poll a subset of channels per cycle to avoid long blocking UART waits
+  // Poll a subset of channels per cycle; each channel advances one small step
+  bool any_wrap = false;
   for (uint8_t i = 0; i < this->poll_channels_per_cycle_; i++) {
-    this->request_status_channel(this->next_channel_);
+    uint8_t ch = this->next_channel_;
+    this->request_status_channel(ch);
     this->next_channel_ = (uint8_t)((this->next_channel_ + 1) % 16);
+    if (this->next_channel_ == 0) any_wrap = true;
   }
+  // Publish periodically; also publish every 5 cycles to keep HA fresh
   this->publish_updates();
 }
 
@@ -49,52 +53,63 @@ void WavinAHC9000::request_status() {
 
 void WavinAHC9000::request_status_channel(uint8_t ch) {
   if (ch >= 16) return;
-  // Gather: primary element, packed data (setpoint+mode), channels status, and element temps
-  {
-    // Primary element and lost flag
-    std::vector<uint16_t> regs;
+  auto &st = this->channels_[ch + 1];
+  std::vector<uint16_t> regs;
+  // Step 0: primary element and lost flag
+  if (this->channel_step_[ch] == 0) {
     if (this->read_registers(CAT_CHANNELS, ch, CH_PRIMARY_ELEMENT, 1, regs)) {
       uint16_t v = regs[0];
-      uint16_t primary = v & CH_PRIMARY_ELEMENT_ELEMENT_MASK; // controller returns index+1
-      bool all_lost = (v & CH_PRIMARY_ELEMENT_ALL_TP_LOST_MASK) != 0;
-      auto &st = this->channels_[ch + 1];
-      // Read mode + setpoint
-      regs.clear();
-      if (this->read_registers(CAT_PACKED, ch, PACKED_CONFIGURATION, 1, regs)) {
-        uint16_t mode_bits = regs[0] & PACKED_CONFIGURATION_MODE_MASK;
-        // Map manual -> HEAT, standby -> OFF (so users can toggle off)
-        st.mode = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
-      }
-      regs.clear();
-      if (this->read_registers(CAT_PACKED, ch, PACKED_MANUAL_TEMPERATURE, 1, regs)) {
-        st.setpoint_c = this->raw_to_c(regs[0]);
-      }
-      // Output status
-      regs.clear();
-      if (this->read_registers(CAT_CHANNELS, ch, CH_TIMER_EVENT, 1, regs)) {
-        bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
-        st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
-      }
-      // Current temperature and battery from primary element (index-1), read 11 registers
-      if (!all_lost && primary > 0) {
-        regs.clear();
-        if (this->read_registers(CAT_ELEMENTS, primary - 1, 0, 11, regs)) {
-          if (regs.size() > ELEM_AIR_TEMPERATURE)
-            st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
-          if (regs.size() > ELEM_BATTERY_STATUS) {
-            uint16_t raw = regs[ELEM_BATTERY_STATUS]; // in 10% steps
-            uint8_t pct = (raw > 10 ? 100 : raw * 10);
-            st.battery_pct = pct;
-            auto it = this->battery_sensors_.find(ch + 1);
-            if (it != this->battery_sensors_.end() && it->second != nullptr) {
-              it->second->publish_state((float)pct);
-            }
-          }
-        }
-      } else {
-        st.current_temp_c = NAN;
-      }
+      st.primary_index = v & CH_PRIMARY_ELEMENT_ELEMENT_MASK;
+      st.all_tp_lost = (v & CH_PRIMARY_ELEMENT_ALL_TP_LOST_MASK) != 0;
     }
+    this->channel_step_[ch] = 1;
+    return;
+  }
+  // Step 1: mode/config
+  if (this->channel_step_[ch] == 1) {
+    if (this->read_registers(CAT_PACKED, ch, PACKED_CONFIGURATION, 1, regs)) {
+      uint16_t mode_bits = regs[0] & PACKED_CONFIGURATION_MODE_MASK;
+      st.mode = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+    }
+    this->channel_step_[ch] = 2;
+    return;
+  }
+  // Step 2: setpoint
+  if (this->channel_step_[ch] == 2) {
+    if (this->read_registers(CAT_PACKED, ch, PACKED_MANUAL_TEMPERATURE, 1, regs)) {
+      st.setpoint_c = this->raw_to_c(regs[0]);
+    }
+    this->channel_step_[ch] = 3;
+    return;
+  }
+  // Step 3: output status
+  if (this->channel_step_[ch] == 3) {
+    if (this->read_registers(CAT_CHANNELS, ch, CH_TIMER_EVENT, 1, regs)) {
+      bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
+      st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
+    }
+    this->channel_step_[ch] = 4;
+    return;
+  }
+  // Step 4: element temp + battery
+  if (this->channel_step_[ch] == 4) {
+    if (!st.all_tp_lost && st.primary_index > 0) {
+      if (this->read_registers(CAT_ELEMENTS, (uint8_t)(st.primary_index - 1), 0, 11, regs)) {
+        if (regs.size() > ELEM_AIR_TEMPERATURE)
+          st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
+        if (regs.size() > ELEM_BATTERY_STATUS) {
+          uint16_t raw = regs[ELEM_BATTERY_STATUS];
+          uint8_t pct = (raw > 10 ? 100 : raw * 10);
+          st.battery_pct = pct;
+          auto it = this->battery_sensors_.find(ch + 1);
+          if (it != this->battery_sensors_.end() && it->second != nullptr) it->second->publish_state((float)pct);
+        }
+      }
+    } else {
+      st.current_temp_c = NAN;
+    }
+    this->channel_step_[ch] = 0; // wrap
+    return;
   }
 }
 
