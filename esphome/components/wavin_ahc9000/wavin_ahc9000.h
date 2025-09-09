@@ -121,11 +121,11 @@ class WavinZoneClimate : public climate::Climate, public Component {
 
   void dump_config() override;
 
+  void update_from_parent();
+
  protected:
   climate::ClimateTraits traits() override;
   void control(const climate::ClimateCall &call) override;
-
-  void update_from_parent();
 
   WavinAHC9000 *parent_{nullptr};
   uint8_t single_channel_{0};

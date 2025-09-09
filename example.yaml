@@ -1,7 +1,11 @@
 esphome:
-  name: wavin-gateway
-  platform: ESP32
+  name: wavinahc9000v3
+  friendly_name: wavinahc9000v3
+
+esp32:
   board: esp32dev
+  framework:
+    type: esp-idf
 
 external_components:
   - source: github://heinekmadsen/esphome_wavinahc9000v3@main
@@ -22,19 +26,25 @@ wavin_ahc9000:
   id: wavin
   uart_id: uart_wavin
   tx_enable_pin: GPIO5
-  channels: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
-  groups:
-    - name: "Living Area"
-      members: [1,2]
-  channel_names:
-    - channel: 4
-      name: "Kitchen"
-    - channel: 3
-      name: "Bathroom"
   temp_divisor: 10.0
   receive_timeout_ms: 1000
   update_interval: 5s
-  battery_sensors: true
+
+climate:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Zone 1"
+    channel: 1
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Living Area"
+    members: [2,3]
+
+sensor:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Zone 1 Battery"
+    channel: 1
 
 wifi:
   ssid: "<your-ssid>"

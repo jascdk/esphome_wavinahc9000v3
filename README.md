@@ -7,7 +7,7 @@ Status: working scaffold using the dkjonas mapping (categories/pages/indices). A
 ## Features
 - 16 channels (zones)
 - Climate entity per channel
-- Optional groups that aggregate multiple channels into one entity
+- Optional grouped climates that aggregate multiple channels into one entity
 - Read current temperature, setpoint, mode/action
 - Set target temperature (writes setpoint)
 - Optional battery sensors per channel (percentage)
@@ -16,7 +16,7 @@ Status: working scaffold using the dkjonas mapping (categories/pages/indices). A
 - RS-485 connection to the controller.
 - Use an ESP32 or ESP8266 with a TTL↔RS485 adapter.
 
-## Example ESPHome YAML
+## Example ESPHome YAML (explicit platforms)
 ```yaml
 esphome:
   name: wavin-gateway
@@ -39,29 +39,31 @@ wavin_ahc9000:
   id: wavin
   uart_id: uart_wavin
   tx_enable_pin: GPIO5  # Optional, for RS-485 DE/RE
-  channels: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
-  groups:
-    - name: "Living Area"
-      members: [1,2]
-    - name: "Bedrooms"
-      members: [3,4,5]
-  channel_names:
-    - channel: 1
-      name: "Kitchen"
-    - channel: 2
-      name: "Dining"
-    - channel: 3
-      name: "Living Room"
   temp_divisor: 10.0  # raw temperature scaling; adjust per spec
   receive_timeout_ms: 1000
   update_interval: 5s
-  battery_sensors: true
+
+climate:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Zone 1"
+    channel: 1
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Living Area"
+    members: [2, 3]
+
+sensor:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Zone 1 Battery"
+    channel: 1
 
 logger:
   level: DEBUG
 ```
 
-Note: entities are created automatically by this component; there's no separate `climate:` platform block needed.
+Note: climates are defined explicitly under the `climate:` section using platform `wavin_ahc9000` (single channel or grouped). Optional per-channel battery sensors use `sensor: - platform: wavin_ahc9000`.
 
 ## Implementation Plan
 - Protocol per dkjonas reference:
@@ -93,27 +95,39 @@ uart:
 
 wavin_ahc9000:
   uart_id: uart_wavin
-  channels: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
-  channel_names:
-    - channel: 1
-      name: "Hall"
-    - channel: 5
-      name: "Master Bedroom"
   update_interval: 5s
+
+climate:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Zone 1"
+    channel: 1
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Zone 2"
+    channel: 2
 ```
 
 2) Only use selected channels and one group of paired zones:
 ```yaml
 wavin_ahc9000:
   uart_id: uart_wavin
-  channels: [1,2,3,6]
-  groups:
-    - name: "Living Area"
-      members: [1,2]
-  channel_names:
-    - channel: 3
-      name: "Bathroom"
-  battery_sensors: true
+
+climate:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Living Area"
+    members: [1,2]
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Bathroom"
+    channel: 3
+
+sensor:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Zone 1 Battery"
+    channel: 1
 ```
 
 3) RS-485 transceiver with TX enable and tighter polling:
@@ -121,7 +135,6 @@ wavin_ahc9000:
 wavin_ahc9000:
   uart_id: uart_wavin
   tx_enable_pin: GPIO5
-  channels: [1,2,3]
   update_interval: 3s
   receive_timeout_ms: 800
 ```
