@@ -44,8 +44,8 @@ async def to_code(config):
     if CONF_CHANNEL in config:
         cg.add(var.set_single_channel(config[CONF_CHANNEL]))
         cg.add(hub.add_channel_climate(var))
-    else:
-    members = config.get(CONF_MEMBERS, [])
-    vec = cg.RawExpression("std::vector<int>{%s}" % ",".join(str(m) for m in members))
-    cg.add(var.set_members(vec))
-    cg.add(hub.add_group_climate(var))
+    elif CONF_MEMBERS in config:
+        members = config.get(CONF_MEMBERS, [])
+        vec = cg.RawExpression("std::vector<int>{%s}" % ",".join(str(m) for m in members))
+        cg.add(var.set_members(vec))
+        cg.add(hub.add_group_climate(var))
