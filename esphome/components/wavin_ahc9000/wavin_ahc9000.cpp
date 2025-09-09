@@ -40,8 +40,8 @@ void WavinAHC9000::request_status() {
       regs.clear();
       if (this->read_registers(CAT_PACKED, ch, PACKED_CONFIGURATION, 1, regs)) {
         uint16_t mode_bits = regs[0] & PACKED_CONFIGURATION_MODE_MASK;
-        st.mode = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) ? climate::CLIMATE_MODE_HEAT : climate::CLIMATE_MODE_HEAT;
-        // We only expose HEAT mode; use action to convey standby vs heating later
+        // Map manual -> HEAT, standby -> OFF (so users can toggle off)
+        st.mode = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
       }
       regs.clear();
       if (this->read_registers(CAT_PACKED, ch, PACKED_MANUAL_TEMPERATURE, 1, regs)) {
@@ -271,17 +271,13 @@ void WavinZoneClimate::dump_config() {
 
 climate::ClimateTraits WavinZoneClimate::traits() {
   climate::ClimateTraits t;
-  t.set_supported_modes({climate::CLIMATE_MODE_HEAT});
-  t.set_supported_actions({climate::CLIMATE_ACTION_OFF, climate::CLIMATE_ACTION_IDLE, climate::CLIMATE_ACTION_HEATING});
+  t.set_supported_modes({climate::CLIMATE_MODE_HEAT, climate::CLIMATE_MODE_OFF});
   t.set_visual_min_temperature(5);
   t.set_visual_max_temperature(35);
   t.set_visual_temperature_step(0.5f);
   t.set_supports_current_temperature(true);
   t.set_supports_action(true);
   t.set_supports_two_point_target_temperature(false);
-  t.set_supports_auto_mode(false);
-  t.set_supports_away(false);
-  t.set_supports_heat_cool_mode(false);
   return t;
 }
 
@@ -314,14 +310,15 @@ void WavinZoneClimate::update_from_parent() {
     uint8_t ch = this->single_channel_;
     this->current_temperature = this->parent_->get_channel_current_temp(ch);
     this->target_temperature = this->parent_->get_channel_setpoint(ch);
-  // Map action/mode: we expose OFF if config says standby
-  this->mode = climate::CLIMATE_MODE_HEAT; // device primarily supports heat
+    // Use parent-provided mode (HEAT or OFF)
+    this->mode = this->parent_->get_channel_mode(ch);
     this->action = this->parent_->get_channel_action(ch);
   } else if (!this->members_.empty()) {
     // Aggregate: average temps, setpoint; action = any heating => heating
     float sum_curr = 0, sum_set = 0;
     int n = 0;
     bool any_heat = false;
+    bool all_off = true;
     for (auto ch : this->members_) {
       float c = this->parent_->get_channel_current_temp(ch);
       float s = this->parent_->get_channel_setpoint(ch);
@@ -331,10 +328,11 @@ void WavinZoneClimate::update_from_parent() {
       }
       if (!std::isnan(s)) sum_set += s;
       if (this->parent_->get_channel_action(ch) == climate::CLIMATE_ACTION_HEATING) any_heat = true;
+      if (this->parent_->get_channel_mode(ch) != climate::CLIMATE_MODE_OFF) all_off = false;
     }
     if (n > 0) this->current_temperature = sum_curr / n;
     if (!this->members_.empty()) this->target_temperature = sum_set / this->members_.size();
-  this->mode = climate::CLIMATE_MODE_HEAT;
+    this->mode = all_off ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
     this->action = any_heat ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
   }
   this->publish_state();
