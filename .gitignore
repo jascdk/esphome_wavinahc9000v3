@@ -1,0 +1,22 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors/IDE
+.vscode/
+*.code-workspace
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+
+# ESPHome / PlatformIO / build artifacts
+.esphome/
+.pio/
+**/.pio/
+build/
+.cache/
+
+# Logs
+*.log

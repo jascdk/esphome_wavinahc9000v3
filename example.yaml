@@ -1,0 +1,47 @@
+esphome:
+  name: wavin-gateway
+  platform: ESP32
+  board: esp32dev
+
+external_components:
+  - source:
+      type: local
+      path: ./esphome/components
+    components: [wavin_ahc9000]
+
+logger:
+  level: DEBUG
+
+uart:
+  id: uart_wavin
+  tx_pin: GPIO17
+  rx_pin: GPIO16
+  baud_rate: 38400
+  stop_bits: 1
+  parity: NONE
+
+wavin_ahc9000:
+  id: wavin
+  uart_id: uart_wavin
+  tx_enable_pin: GPIO5
+  channels: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+  groups:
+    - name: "Living Area"
+      members: [1,2]
+  channel_names:
+    - channel: 1
+      name: "Kitchen"
+    - channel: 3
+      name: "Bathroom"
+  temp_divisor: 10.0
+  receive_timeout_ms: 1000
+  update_interval: 5s
+  battery_sensors: true
+
+wifi:
+  ssid: "<your-ssid>"
+  password: "<your-password>"
+
+ota:
+
+api:
