@@ -88,7 +88,7 @@ async def to_code(config):
         for ch in members:
             grouped.add(ch)
 
-    cl = cg.new_Pvariable(WavinZoneClimate)
+    cl = cg.new_Pvariable(cg.new_id(), WavinZoneClimate)
     await climate.register_climate(cl, {CONF_NAME: g[CONF_NAME]})
     cg.add(cl.set_parent(var))
     cg.add(cl.set_members(members))
@@ -103,7 +103,7 @@ async def to_code(config):
     for ch in config[CONF_CHANNELS]:
         if ch in grouped:
             continue
-    cl = cg.new_Pvariable(WavinZoneClimate)
+    cl = cg.new_Pvariable(cg.new_id(), WavinZoneClimate)
     name = override_names.get(ch, f"Zone {ch}")
     await climate.register_climate(cl, {CONF_NAME: name})
     cg.add(cl.set_parent(var))
@@ -117,6 +117,6 @@ async def to_code(config):
             for ch in g[CONF_MEMBERS]:
                 all_channels.add(ch)
         for ch in sorted(all_channels):
-            s = cg.new_Pvariable(sensor.Sensor)
+            s = cg.new_Pvariable(cg.new_id(), sensor.Sensor)
             await sensor.register_sensor(s, {CONF_NAME: f"Zone {ch} Battery"})
             cg.add(var.add_channel_battery_sensor(ch, s))
