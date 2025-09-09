@@ -19,6 +19,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void set_temp_divisor(float d) { this->temp_divisor_ = d; }
   void set_receive_timeout_ms(uint32_t t) { this->receive_timeout_ms_ = t; }
   void set_tx_enable_pin(GPIOPin *p) { this->tx_enable_pin_ = p; }
+  void set_poll_channels_per_cycle(uint8_t n) { this->poll_channels_per_cycle_ = n == 0 ? 1 : (n > 16 ? 16 : n); }
 
   void setup() override;
   void loop() override;
@@ -34,6 +35,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void write_group_setpoint(const std::vector<uint8_t> &members, float celsius);
   void write_channel_mode(uint8_t channel, climate::ClimateMode mode);
   void request_status();
+  void request_status_channel(uint8_t ch_index);
 
   // Data access
   float get_channel_current_temp(uint8_t channel) const;
@@ -71,6 +73,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   uint32_t last_poll_ms_{0};
   uint32_t receive_timeout_ms_{1000};
   GPIOPin *tx_enable_pin_{nullptr};
+  uint8_t poll_channels_per_cycle_{2};
+  uint8_t next_channel_{0};
 
   // Protocol constants
   static constexpr uint8_t DEVICE_ADDR = 0x01;

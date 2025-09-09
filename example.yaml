@@ -16,6 +16,7 @@ logger:
 
 uart:
   id: uart_wavin
+  # Prefer stable UART pins (e.g. 16/17) to avoid strapping pin issues
   tx_pin: GPIO17
   rx_pin: GPIO16
   baud_rate: 38400
@@ -29,6 +30,7 @@ wavin_ahc9000:
   temp_divisor: 10.0
   receive_timeout_ms: 1000
   update_interval: 5s
+  poll_channels_per_cycle: 2
 
 climate:
   - platform: wavin_ahc9000

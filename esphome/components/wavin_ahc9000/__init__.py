@@ -19,6 +19,7 @@ CONF_TEMP_DIVISOR = "temp_divisor"
 CONF_UART_ID = "uart_id"
 CONF_TX_ENABLE_PIN = "tx_enable_pin"
 CONF_RECEIVE_TIMEOUT_MS = "receive_timeout_ms"
+CONF_POLL_CHANNELS_PER_CYCLE = "poll_channels_per_cycle"
 def _channels_list(value):
     return cv.ensure_list(cv.int_range(min=1, max=16))(value)
 
@@ -32,6 +33,7 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_TEMP_DIVISOR, default=10.0): cv.positive_float,
             cv.Optional(CONF_RECEIVE_TIMEOUT_MS, default=1000): cv.positive_int,
             cv.Optional(CONF_UPDATE_INTERVAL, default="5s"): cv.update_interval,
+            cv.Optional(CONF_POLL_CHANNELS_PER_CYCLE, default=2): cv.int_range(min=1, max=16),
         }
     )
     .extend(cv.polling_component_schema("5s"))
@@ -52,5 +54,7 @@ async def to_code(config):
     if CONF_TX_ENABLE_PIN in config:
         pin = await cg.gpio_pin_expression(config[CONF_TX_ENABLE_PIN])
         cg.add(var.set_tx_enable_pin(pin))
+    if CONF_POLL_CHANNELS_PER_CYCLE in config:
+        cg.add(var.set_poll_channels_per_cycle(config[CONF_POLL_CHANNELS_PER_CYCLE]))
 
     # Entities are defined under climate:/sensor: platforms (see climate.py and sensor/) 

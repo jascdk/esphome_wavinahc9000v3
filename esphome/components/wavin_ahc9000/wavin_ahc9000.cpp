@@ -13,8 +13,6 @@ void WavinAHC9000::setup() {
     this->tx_enable_pin_->setup();
     this->tx_enable_pin_->digital_write(false);
   }
-  // Trigger an initial poll so entities publish quickly after boot
-  this->request_status();
 }
 
 void WavinAHC9000::loop() {
@@ -22,7 +20,12 @@ void WavinAHC9000::loop() {
 }
 
 void WavinAHC9000::update() {
-  this->request_status();
+  // Poll a subset of channels per cycle to avoid long blocking UART waits
+  for (uint8_t i = 0; i < this->poll_channels_per_cycle_; i++) {
+    this->request_status_channel(this->next_channel_);
+    this->next_channel_ = (uint8_t)((this->next_channel_ + 1) % 16);
+  }
+  this->publish_updates();
 }
 
 void WavinAHC9000::dump_config() {
@@ -39,6 +42,15 @@ void WavinAHC9000::add_group_climate(WavinZoneClimate *c) { this->group_climates
 void WavinAHC9000::request_status() {
   // For each channel, gather: primary element, packed data (setpoint+mode), channels status, and element temps
   for (uint8_t ch = 0; ch < 16; ch++) {
+    this->request_status_channel(ch);
+  }
+  this->publish_updates();
+}
+
+void WavinAHC9000::request_status_channel(uint8_t ch) {
+  if (ch >= 16) return;
+  // Gather: primary element, packed data (setpoint+mode), channels status, and element temps
+  {
     // Primary element and lost flag
     std::vector<uint16_t> regs;
     if (this->read_registers(CAT_CHANNELS, ch, CH_PRIMARY_ELEMENT, 1, regs)) {
@@ -84,7 +96,6 @@ void WavinAHC9000::request_status() {
       }
     }
   }
-  this->publish_updates();
 }
 
 void WavinAHC9000::write_channel_setpoint(uint8_t channel, float celsius) {

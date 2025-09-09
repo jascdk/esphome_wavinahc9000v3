@@ -14,7 +14,7 @@ def _channels_list(value):
     return cv.ensure_list(cv.int_range(min=1, max=16))(value)
 
 
-BASE_SCHEMA = climate.CLIMATE_SCHEMA.extend(
+BASE_SCHEMA = climate.climate_schema().extend(
     {
         cv.GenerateID(): cv.declare_id(WavinZoneClimate),
         cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000),
