@@ -89,10 +89,10 @@ async def to_code(config):
             grouped.add(ch)
 
     cl = cg.new_Pvariable(cg.auto_id(), WavinZoneClimate)
-        await climate.register_climate(cl, {CONF_NAME: g[CONF_NAME]})
-        cg.add(cl.set_parent(var))
-        cg.add(cl.set_members(members))
-        cg.add(var.add_group_climate(cl))
+    await climate.register_climate(cl, {CONF_NAME: g[CONF_NAME]})
+    cg.add(cl.set_parent(var))
+    cg.add(cl.set_members(members))
+    cg.add(var.add_group_climate(cl))
 
     # Channel name overrides map
     override_names = {}
@@ -104,11 +104,11 @@ async def to_code(config):
         if ch in grouped:
             continue
     cl = cg.new_Pvariable(cg.auto_id(), WavinZoneClimate)
-        name = override_names.get(ch, f"Zone {ch}")
-        await climate.register_climate(cl, {CONF_NAME: name})
-        cg.add(cl.set_parent(var))
-        cg.add(cl.set_single_channel(ch))
-        cg.add(var.add_channel_climate(cl))
+    name = override_names.get(ch, f"Zone {ch}")
+    await climate.register_climate(cl, {CONF_NAME: name})
+    cg.add(cl.set_parent(var))
+    cg.add(cl.set_single_channel(ch))
+    cg.add(var.add_channel_climate(cl))
 
     # Battery sensors: expose for all channels in channels + groups
     if config[CONF_BATTERY_SENSORS]:
