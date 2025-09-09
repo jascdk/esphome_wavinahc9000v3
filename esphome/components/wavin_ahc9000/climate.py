@@ -48,4 +48,4 @@ async def to_code(config):
     members = config.get(CONF_MEMBERS, [])
     vec = cg.RawExpression("std::vector<int>{%s}" % ",".join(str(m) for m in members))
     cg.add(var.set_members(vec))
-        cg.add(hub.add_group_climate(var))
+    cg.add(hub.add_group_climate(var))
