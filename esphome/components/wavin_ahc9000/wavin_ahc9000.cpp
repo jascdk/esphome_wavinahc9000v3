@@ -13,6 +13,8 @@ void WavinAHC9000::setup() {
     this->tx_enable_pin_->setup();
     this->tx_enable_pin_->digital_write(false);
   }
+  // Trigger an initial poll so entities publish quickly after boot
+  this->request_status();
 }
 
 void WavinAHC9000::loop() {
@@ -21,6 +23,14 @@ void WavinAHC9000::loop() {
 
 void WavinAHC9000::update() {
   this->request_status();
+}
+
+void WavinAHC9000::dump_config() {
+  ESP_LOGCONFIG(TAG, "Wavin AHC9000");
+  LOG_UPDATE_INTERVAL(this);
+  ESP_LOGCONFIG(TAG, "  Temp divisor: %.2f", this->temp_divisor_);
+  ESP_LOGCONFIG(TAG, "  Receive timeout: %u ms", this->receive_timeout_ms_);
+  ESP_LOGCONFIG(TAG, "  TX enable pin: %s", this->tx_enable_pin_ ? "YES" : "NO");
 }
 
 void WavinAHC9000::add_channel_climate(WavinZoneClimate *c) { this->single_ch_climates_.push_back(c); }
@@ -148,6 +158,7 @@ bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index,
   msg[7] = crc >> 8;
 
   if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+  ESP_LOGVV(TAG, "READ req: cat=%u page=%u idx=%u cnt=%u", category, page, index, count);
   this->write_array(msg, 8);
   this->flush();
   delayMicroseconds(250);
@@ -171,12 +182,14 @@ bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index,
           uint16_t w = (buf[3 + i * 2] << 8) | buf[4 + i * 2];
           out.push_back(w);
         }
+    ESP_LOGVV(TAG, "READ rsp: %u words", (unsigned) out.size());
         return true;
       }
     }
     // brief yield
     delay(1);
   }
+  ESP_LOGW(TAG, "READ timeout cat=%u page=%u idx=%u cnt=%u", category, page, index, count);
   return false;
 }
 
@@ -195,6 +208,7 @@ bool WavinAHC9000::write_register(uint8_t category, uint8_t page, uint8_t index,
   msg[9] = crc >> 8;
 
   if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+  ESP_LOGVV(TAG, "WRITE req: cat=%u page=%u idx=%u val=%u", category, page, index, value);
   this->write_array(msg, 10);
   this->flush();
   delayMicroseconds(250);
@@ -210,7 +224,9 @@ bool WavinAHC9000::write_register(uint8_t category, uint8_t page, uint8_t index,
       buf.push_back((uint8_t)c);
       if (buf.size() > 5 && buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE && buf[2] + 5 == buf.size()) {
         uint16_t rcrc = crc16(buf.data(), (uint8_t)buf.size());
-        return rcrc == 0;
+  bool ok = rcrc == 0;
+  ESP_LOGVV(TAG, "WRITE ack: %s", ok ? "OK" : "BAD CRC");
+  return ok;
       }
     }
     delay(1);
@@ -235,6 +251,7 @@ bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t
   msg[11] = crc >> 8;
 
   if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+  ESP_LOGVV(TAG, "WMASK req: cat=%u page=%u idx=%u val=%u mask=0x%04X", category, page, index, value, mask);
   this->write_array(msg, 12);
   this->flush();
   delayMicroseconds(250);
@@ -250,7 +267,9 @@ bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t
       buf.push_back((uint8_t)c);
       if (buf.size() > 5 && buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE_MASKED && buf[2] + 5 == buf.size()) {
         uint16_t rcrc = crc16(buf.data(), (uint8_t)buf.size());
-        return rcrc == 0;
+  bool ok = rcrc == 0;
+  ESP_LOGVV(TAG, "WMASK ack: %s", ok ? "OK" : "BAD CRC");
+  return ok;
       }
     }
     delay(1);
@@ -259,6 +278,7 @@ bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t
 }
 
 void WavinAHC9000::publish_updates() {
+  ESP_LOGV(TAG, "Publishing updates to %u single climates and %u group climates", (unsigned) this->single_ch_climates_.size(), (unsigned) this->group_climates_.size());
   for (auto *c : this->single_ch_climates_) c->update_from_parent();
   for (auto *c : this->group_climates_) c->update_from_parent();
 }

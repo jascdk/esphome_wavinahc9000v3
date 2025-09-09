@@ -23,6 +23,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void setup() override;
   void loop() override;
   void update() override;
+  void dump_config() override;
 
   void add_channel_climate(WavinZoneClimate *c);
   void add_group_climate(WavinZoneClimate *c);
