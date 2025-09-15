@@ -47,65 +47,18 @@ sensor:
     name: "Zone 1 Battery"
     channel: 1
 
-button:
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Repair CH1"
-    channel: 1
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Repair CH9"
-    channel: 9
-  # Extended repair clears additional flags that may lock the thermostat keys
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Repair CH1 (Extended)"
-    channel: 1
-    extended: true
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Repair CH9 (Extended)"
-    channel: 9
-    extended: true
-  # Aggressive repair clears bits 3..6 (avoids mode bits). Use only if extended fails.
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Repair CH1 (Aggressive)"
-    channel: 1
-    aggressive: true
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Repair CH9 (Aggressive)"
-    channel: 9
-    aggressive: true
-  # Normalize to factory-like baseline (0x4000 for HEAT or 0x4001 for OFF)
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Normalize CH1 -> HEAT"
-    channel: 1
-    normalize: true
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Normalize CH1 -> OFF"
-    channel: 1
-    normalize: true
-    normalize_off: true
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Normalize CH9 -> HEAT"
-    channel: 9
-    normalize: true
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Normalize CH9 -> OFF"
-    channel: 9
-    normalize: true
-    normalize_off: true
+api:
+  services:
+    - service: wavin_strict_heat
+      variables:
+        channel: int
+      then:
+        - lambda: |-
+            // Force baseline 0x4000 on the selected channel
+            id(wavin).normalize_channel_config(channel, false);
 
 wifi:
   ssid: "<your-ssid>"
   password: "<your-password>"
 
 ota:
-
-api:

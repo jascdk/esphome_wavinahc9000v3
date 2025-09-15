@@ -3,7 +3,6 @@
 #include "esphome/components/climate/climate.h"
 #include "esphome/components/uart/uart.h"
 #include "esphome/core/component.h"
-#include "esphome/components/button/button.h"
 
 #include <vector>
 #include <map>
@@ -45,9 +44,6 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   bool is_strict_mode_write(uint8_t channel) const;
   void request_status();
   void request_status_channel(uint8_t ch_index);
-  void repair_channel_flags(uint8_t channel);
-  void repair_channel_flags_ext(uint8_t channel);
-  void repair_channel_flags_aggressive(uint8_t channel);
   void normalize_channel_config(uint8_t channel, bool off);
 
   // Data access
@@ -164,37 +160,7 @@ class WavinZoneClimate : public climate::Climate, public Component {
   std::vector<uint8_t> members_{};
 };
 
-class WavinRepairButton : public button::Button, public Component {
- public:
-  void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
-  void set_channel(uint8_t ch) { this->channel_ = ch; }
-  void set_extended(bool v) { this->extended_ = v; }
-  void set_aggressive(bool v) { this->aggressive_ = v; }
-  void set_normalize(bool v) { this->normalize_ = v; }
-  void set_normalize_off(bool v) { this->normalize_off_ = v; }
-  void dump_config() override;
-
- protected:
-   void press_action() override {
-    if (this->parent_ != nullptr && this->channel_ >= 1 && this->channel_ <= 16) {
-        if (this->normalize_) {
-          this->parent_->normalize_channel_config(this->channel_, this->normalize_off_);
-        } else if (this->aggressive_) {
-          this->parent_->repair_channel_flags_aggressive(this->channel_);
-        } else if (this->extended_) {
-          this->parent_->repair_channel_flags_ext(this->channel_);
-        } else {
-          this->parent_->repair_channel_flags(this->channel_);
-        }
-    }
-  }
-  WavinAHC9000 *parent_{nullptr};
-  uint8_t channel_{0};
-  bool extended_{false};
-   bool aggressive_{false};
-    bool normalize_{false};
-    bool normalize_off_{false};
-};
+// Repair button removed; use API service to normalize
 
 }  // namespace wavin_ahc9000
 }  // namespace esphome
