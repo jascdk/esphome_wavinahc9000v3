@@ -13,6 +13,8 @@ external_components:
 
 logger:
   level: DEBUG
+  logs:
+    wavin_ahc9000: VERY_VERBOSE
 
 uart:
   id: uart_wavin
@@ -27,6 +29,7 @@ wavin_ahc9000:
   id: wavin
   uart_id: uart_wavin
   update_interval: 5s
+  allow_mode_writes: false
 
 climate:
   - platform: wavin_ahc9000
