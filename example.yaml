@@ -47,6 +47,16 @@ sensor:
     name: "Zone 1 Battery"
     channel: 1
 
+button:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Repair CH1"
+    channel: 1
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Repair CH9"
+    channel: 9
+
 wifi:
   ssid: "<your-ssid>"
   password: "<your-password>"

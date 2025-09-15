@@ -3,6 +3,7 @@
 #include "esphome/components/climate/climate.h"
 #include "esphome/components/uart/uart.h"
 #include "esphome/core/component.h"
+#include "esphome/components/button/button.h"
 
 #include <vector>
 #include <map>
@@ -41,6 +42,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void refresh_channel_now(uint8_t channel);
   void request_status();
   void request_status_channel(uint8_t ch_index);
+  void repair_channel_flags(uint8_t channel);
 
   // Data access
   float get_channel_current_temp(uint8_t channel) const;
@@ -117,6 +119,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_MANUAL = 0x00;
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_STANDBY = 0x01;
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_STANDBY_ALT = 0x04; // fallback for variant firmwares
+  static constexpr uint16_t PACKED_CONFIGURATION_PROGRAM_BIT = 0x0008; // suspected schedule/program flag
 };
 
 // Inline helpers for configuring sensors
@@ -150,6 +153,22 @@ class WavinZoneClimate : public climate::Climate, public Component {
   uint8_t single_channel_{0};
   bool single_channel_set_{false};
   std::vector<uint8_t> members_{};
+};
+
+class WavinRepairButton : public button::Button, public Component {
+ public:
+  void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
+  void set_channel(uint8_t ch) { this->channel_ = ch; }
+  void dump_config() override { LOG_BUTTON("  ", "Wavin Repair Button", this); }
+
+ protected:
+  void press_action() override {
+    if (this->parent_ != nullptr && this->channel_ >= 1 && this->channel_ <= 16) {
+      this->parent_->repair_channel_flags(this->channel_);
+    }
+  }
+  WavinAHC9000 *parent_{nullptr};
+  uint8_t channel_{0};
 };
 
 }  // namespace wavin_ahc9000
