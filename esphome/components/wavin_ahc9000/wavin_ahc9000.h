@@ -126,7 +126,6 @@ class WavinZoneClimate : public climate::Climate, public Component {
     for (int m : members) this->members_.push_back(static_cast<uint8_t>(m));
     this->single_channel_set_ = false;
   }
-  void set_name(const std::string &name) { this->name_ = name; }
 
   void dump_config() override;
 
@@ -140,7 +139,6 @@ class WavinZoneClimate : public climate::Climate, public Component {
   uint8_t single_channel_{0};
   bool single_channel_set_{false};
   std::vector<uint8_t> members_{};
-  std::string name_{};
 };
 
 }  // namespace wavin_ahc9000
