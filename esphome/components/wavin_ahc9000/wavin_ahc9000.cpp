@@ -118,10 +118,11 @@ void WavinAHC9000::update() {
         }
         case 1: {
           if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
-            uint16_t mode_bits = regs[0] & PACKED_CONFIGURATION_MODE_MASK;
+            uint16_t raw_cfg = regs[0];
+            uint16_t mode_bits = raw_cfg & PACKED_CONFIGURATION_MODE_MASK;
             bool is_off = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) || (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY_ALT);
             st.mode = is_off ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
-            ESP_LOGD(TAG, "CH%u mode=%s", ch_num, is_off ? "OFF" : "HEAT");
+            ESP_LOGD(TAG, "CH%u cfg=0x%04X mode=%s", ch_num, (unsigned) raw_cfg, is_off ? "OFF" : "HEAT");
           } else {
             ESP_LOGW(TAG, "CH%u: mode read failed", ch_num);
           }
@@ -436,10 +437,14 @@ void WavinZoneClimate::control(const climate::ClimateCall &call) {
   if (call.get_mode().has_value()) {
     auto m = *call.get_mode();
   ESP_LOGD(TAG, "CTRL: mode=%s for %s", (m == climate::CLIMATE_MODE_OFF ? "OFF" : "HEAT"), this->get_name().c_str());
-    if (this->single_channel_set_) {
-      this->parent_->write_channel_mode(this->single_channel_, m);
-    } else if (!this->members_.empty()) {
-      for (auto ch : this->members_) this->parent_->write_channel_mode(ch, m);
+    if (this->parent_->allow_mode_writes_) {
+      if (this->single_channel_set_) {
+        this->parent_->write_channel_mode(this->single_channel_, m);
+      } else if (!this->members_.empty()) {
+        for (auto ch : this->members_) this->parent_->write_channel_mode(ch, m);
+      }
+    } else {
+      ESP_LOGW(TAG, "Mode writes disabled by config; skipping write for %s", this->get_name().c_str());
     }
     this->mode = (m == climate::CLIMATE_MODE_OFF) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
   }
