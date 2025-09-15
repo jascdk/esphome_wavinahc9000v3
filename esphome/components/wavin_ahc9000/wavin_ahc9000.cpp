@@ -55,23 +55,14 @@ void WavinAHC9000::update() {
         auto want = it_des->second;
         if (want != st.mode) {
           uint16_t current = raw_cfg;
-          // Try ALT standby first for OFF, else MANUAL
-          uint16_t new_bits = (want == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY_ALT : PACKED_CONFIGURATION_MODE_MANUAL;
+          // Enforce standard OFF bits or MANUAL
+          uint16_t new_bits = (want == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
           uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (new_bits & PACKED_CONFIGURATION_MODE_MASK));
           ESP_LOGW(TAG, "Reconciling mode for ch=%u cur=0x%04X next=0x%04X", (unsigned) ch, (unsigned) current, (unsigned) next);
-          bool wrote = this->write_register(CAT_PACKED, ch_page, PACKED_CONFIGURATION, next);
-          if (!wrote && want == climate::CLIMATE_MODE_OFF) {
-            uint16_t std_bits = PACKED_CONFIGURATION_MODE_STANDBY;
-            next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (std_bits & PACKED_CONFIGURATION_MODE_MASK));
-            ESP_LOGW(TAG, "Reconciling std-bit try ch=%u next=0x%04X", (unsigned) ch, (unsigned) next);
-            wrote = this->write_register(CAT_PACKED, ch_page, PACKED_CONFIGURATION, next);
-          }
-          if (wrote) {
+          if (this->write_register(CAT_PACKED, ch_page, PACKED_CONFIGURATION, next)) {
             // Schedule another quick check
             this->urgent_channels_.push_back(ch);
             this->suspend_polling_until_ = millis() + 100;
-          } else {
-            ESP_LOGW(TAG, "Reconciling write failed for ch=%u", (unsigned) ch);
           }
         } else {
           // Achieved desired mode; clear desire
@@ -385,13 +376,7 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
       uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (new_bits & PACKED_CONFIGURATION_MODE_MASK));
       ESP_LOGW(TAG, "WM fallback: PACKED_CONFIGURATION ch=%u cur=0x%04X next=0x%04X", (unsigned) channel, (unsigned) current, (unsigned) next);
       ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, next);
-      if (!ok && mode == climate::CLIMATE_MODE_OFF) {
-        // Try alternate standby bit pattern as second attempt
-        uint16_t alt_bits = PACKED_CONFIGURATION_MODE_STANDBY_ALT;
-        next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (alt_bits & PACKED_CONFIGURATION_MODE_MASK));
-        ESP_LOGW(TAG, "OFF alt-bit try: PACKED_CONFIGURATION ch=%u next=0x%04X", (unsigned) channel, (unsigned) next);
-        ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, next);
-      }
+  // No alternate OFF attempt to avoid special thermostat modes
     } else {
       ESP_LOGW(TAG, "WM fallback: read PACKED_CONFIGURATION failed for ch=%u", (unsigned) channel);
     }
