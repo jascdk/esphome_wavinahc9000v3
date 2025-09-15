@@ -10,10 +10,6 @@
 
 namespace esphome {
 namespace wavin_ahc9000 {
-// Forward-declare to avoid hard include when battery sensors are unused
-namespace sensor {
-class Sensor;
-}
 
 // Forward
 class WavinZoneClimate;
