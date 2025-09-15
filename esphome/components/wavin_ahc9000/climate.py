@@ -29,10 +29,10 @@ async def to_code(config):
     # Bind to hub
     cg.add(var.set_parent(hub))
     if CONF_CHANNEL in config:
-            # Append channel suffix to the entity name
-            if CONF_NAME in config:
-                new_name = f"{config[CONF_NAME]}_ch_{config[CONF_CHANNEL]}"
-                cg.add(var.set_name(new_name))
+        # Append channel suffix to the entity name
+        if CONF_NAME in config:
+            new_name = f"{config[CONF_NAME]}_ch_{config[CONF_CHANNEL]}"
+            cg.add(var.set_name(new_name))
         cg.add(var.set_single_channel(config[CONF_CHANNEL]))
         cg.add(hub.add_active_channel(config[CONF_CHANNEL]))
         if config[CONF_STRICT_MODE_WRITES]:
