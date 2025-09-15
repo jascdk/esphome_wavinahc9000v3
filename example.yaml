@@ -36,6 +36,8 @@ climate:
     wavin_ahc9000_id: wavin
     name: "Zone 1"
     channel: 1
+  # Optional: force strict baseline writes (0x4000/0x4001) for this channel
+  strict_mode_writes: false
   - platform: wavin_ahc9000
     wavin_ahc9000_id: wavin
     name: "Living Area"

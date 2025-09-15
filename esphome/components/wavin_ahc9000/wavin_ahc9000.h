@@ -7,6 +7,7 @@
 
 #include <vector>
 #include <map>
+#include <set>
 #include <cmath>
 
 namespace esphome {
@@ -40,6 +41,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void write_group_setpoint(const std::vector<uint8_t> &members, float celsius);
   void write_channel_mode(uint8_t channel, climate::ClimateMode mode);
   void refresh_channel_now(uint8_t channel);
+  void set_strict_mode_write(uint8_t channel, bool enable);
+  bool is_strict_mode_write(uint8_t channel) const;
   void request_status();
   void request_status_channel(uint8_t ch_index);
   void repair_channel_flags(uint8_t channel);
@@ -83,6 +86,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::map<uint8_t, sensor::Sensor *> battery_sensors_;
   std::vector<uint8_t> active_channels_;
   std::map<uint8_t, climate::ClimateMode> desired_mode_; // desired mode to reconcile after refresh
+  std::set<uint8_t> strict_mode_channels_; // channels opting into strict baseline writes
 
   float temp_divisor_{10.0f};
   uint32_t last_poll_ms_{0};

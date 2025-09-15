@@ -409,11 +409,15 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
   if (channel < 1 || channel > 16) return;
   uint8_t page = (uint8_t) (channel - 1);
   this->desired_mode_[channel] = mode;
-  // Prefer strict writes to baseline values to avoid reintroducing lock/program flags
-  uint16_t strict_val = (uint16_t) (0x4000 | (mode == climate::CLIMATE_MODE_OFF ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL));
-  bool ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, strict_val);
+  bool strict = this->is_strict_mode_write(channel);
+  bool ok = false;
+  if (strict) {
+    // Strict baseline to 0x4000/0x4001
+    uint16_t strict_val = (uint16_t) (0x4000 | (mode == climate::CLIMATE_MODE_OFF ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL));
+    ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, strict_val);
+  }
   if (!ok) {
-    // Fallback 1: masked write of mode bits only
+    // Default: masked write of mode bits only (preserve other flags)
     uint16_t and_mask = (uint16_t) (~PACKED_CONFIGURATION_MODE_MASK);
     uint16_t or_mask = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
     ok = this->write_masked_register(CAT_PACKED, page, PACKED_CONFIGURATION, and_mask, (uint16_t) (or_mask & PACKED_CONFIGURATION_MODE_MASK));
@@ -440,6 +444,15 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
   } else {
     ESP_LOGW(TAG, "Mode write failed for ch=%u", (unsigned) channel);
   }
+}
+
+void WavinAHC9000::set_strict_mode_write(uint8_t channel, bool enable) {
+  if (channel < 1 || channel > 16) return;
+  if (enable) this->strict_mode_channels_.insert(channel);
+  else this->strict_mode_channels_.erase(channel);
+}
+bool WavinAHC9000::is_strict_mode_write(uint8_t channel) const {
+  return this->strict_mode_channels_.find(channel) != this->strict_mode_channels_.end();
 }
 
 void WavinAHC9000::refresh_channel_now(uint8_t channel) {

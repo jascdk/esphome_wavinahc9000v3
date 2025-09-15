@@ -10,11 +10,14 @@ CONF_CHANNEL = "channel"
 CONF_MEMBERS = "members"
 
 
+CONF_STRICT_MODE_WRITES = "strict_mode_writes"
+
 CONFIG_SCHEMA = climate.climate_schema(WavinZoneClimate).extend(
     {
         cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000),
         cv.Optional(CONF_CHANNEL): cv.int_range(min=1, max=16),
         cv.Optional(CONF_MEMBERS): cv.ensure_list(cv.int_range(min=1, max=16)),
+    cv.Optional(CONF_STRICT_MODE_WRITES, default=False): cv.boolean,
     }
 )
 
@@ -28,6 +31,8 @@ async def to_code(config):
     if CONF_CHANNEL in config:
         cg.add(var.set_single_channel(config[CONF_CHANNEL]))
         cg.add(hub.add_active_channel(config[CONF_CHANNEL]))
+        if config[CONF_STRICT_MODE_WRITES]:
+            cg.add(hub.set_strict_mode_write(config[CONF_CHANNEL], True))
         cg.add(hub.add_channel_climate(var))
     if CONF_MEMBERS in config:
         cg.add(var.set_members(config[CONF_MEMBERS]))
