@@ -33,9 +33,10 @@ void WavinAHC9000::update() {
 
   std::vector<uint16_t> regs;
   uint8_t &step = this->channel_step_[0];
-
-  switch (step) {
-    case 0: {
+  // Do up to 2 steps per update to surface values faster without long blocking
+  for (int i = 0; i < 2; i++) {
+    switch (step) {
+      case 0: {
       if (this->read_registers(CAT_CHANNELS, ch_page, CH_PRIMARY_ELEMENT, 1, regs) && regs.size() >= 1) {
         uint16_t v = regs[0];
         st.primary_index = v & CH_PRIMARY_ELEMENT_ELEMENT_MASK;
@@ -44,10 +45,10 @@ void WavinAHC9000::update() {
       } else {
         ESP_LOGW(TAG, "CH%u: primary element read failed", ch_num);
       }
-      step = 1;
-      break;
-    }
-    case 1: {
+        step = 1;
+        break;
+      }
+      case 1: {
       if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
         uint16_t mode_bits = regs[0] & PACKED_CONFIGURATION_MODE_MASK;
         st.mode = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
@@ -55,20 +56,20 @@ void WavinAHC9000::update() {
       } else {
         ESP_LOGW(TAG, "CH%u: mode read failed", ch_num);
       }
-      step = 2;
-      break;
-    }
-    case 2: {
+        step = 2;
+        break;
+      }
+      case 2: {
       if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
         st.setpoint_c = this->raw_to_c(regs[0]);
         ESP_LOGD(TAG, "CH%u setpoint=%.1fC", ch_num, st.setpoint_c);
       } else {
         ESP_LOGW(TAG, "CH%u: setpoint read failed", ch_num);
       }
-      step = 3;
-      break;
-    }
-    case 3: {
+        step = 3;
+        break;
+      }
+      case 3: {
       if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
         bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
         st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
@@ -76,10 +77,10 @@ void WavinAHC9000::update() {
       } else {
         ESP_LOGW(TAG, "CH%u: action read failed", ch_num);
       }
-      step = 4;
-      break;
-    }
-    case 4: {
+        step = 4;
+        break;
+      }
+      case 4: {
       if (!st.all_tp_lost && st.primary_index > 0) {
         uint8_t elem_page = (uint8_t) (st.primary_index - 1);
         if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
@@ -91,12 +92,13 @@ void WavinAHC9000::update() {
       } else {
         st.current_temp_c = NAN;
       }
-      step = 0;
-      break;
-    }
+        step = 0;
+        break;
+      }
+  }
   }
 
-  // One-step publish so HA sees incremental updates
+  // Publish after processing this batch
   this->publish_updates();
 }
 
@@ -185,6 +187,10 @@ climate::ClimateTraits WavinZoneClimate::traits() {
   climate::ClimateTraits t;
   t.set_supported_modes({climate::CLIMATE_MODE_HEAT});
   t.set_supports_current_temperature(true);
+  t.set_supports_action(true);
+  t.set_visual_min_temperature(5);
+  t.set_visual_max_temperature(35);
+  t.set_visual_temperature_step(0.5f);
   return t;
 }
 void WavinZoneClimate::control(const climate::ClimateCall &) {}

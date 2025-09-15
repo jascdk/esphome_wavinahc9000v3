@@ -23,9 +23,11 @@ async def to_code(config):
     hub = await cg.get_variable(config[CONF_PARENT_ID])
     var = cg.new_Pvariable(config[CONF_ID])
     await climate.register_climate(var, config)
-    # For now, minimal binding
+    # Bind to hub
     cg.add(var.set_parent(hub))
     if CONF_CHANNEL in config:
         cg.add(var.set_single_channel(config[CONF_CHANNEL]))
+        cg.add(hub.add_channel_climate(var))
     if CONF_MEMBERS in config:
         cg.add(var.set_members(config[CONF_MEMBERS]))
+        cg.add(hub.add_group_climate(var))
