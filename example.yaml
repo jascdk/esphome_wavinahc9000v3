@@ -78,6 +78,29 @@ button:
     name: "Repair CH9 (Aggressive)"
     channel: 9
     aggressive: true
+  # Normalize to factory-like baseline (0x4000 for HEAT or 0x4001 for OFF)
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Normalize CH1 -> HEAT"
+    channel: 1
+    normalize: true
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Normalize CH1 -> OFF"
+    channel: 1
+    normalize: true
+    normalize_off: true
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Normalize CH9 -> HEAT"
+    channel: 9
+    normalize: true
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Normalize CH9 -> OFF"
+    channel: 9
+    normalize: true
+    normalize_off: true
 
 wifi:
   ssid: "<your-ssid>"

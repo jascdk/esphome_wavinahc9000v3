@@ -45,6 +45,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void repair_channel_flags(uint8_t channel);
   void repair_channel_flags_ext(uint8_t channel);
   void repair_channel_flags_aggressive(uint8_t channel);
+  void normalize_channel_config(uint8_t channel, bool off);
 
   // Data access
   float get_channel_current_temp(uint8_t channel) const;
@@ -165,12 +166,16 @@ class WavinRepairButton : public button::Button, public Component {
   void set_channel(uint8_t ch) { this->channel_ = ch; }
   void set_extended(bool v) { this->extended_ = v; }
   void set_aggressive(bool v) { this->aggressive_ = v; }
+  void set_normalize(bool v) { this->normalize_ = v; }
+  void set_normalize_off(bool v) { this->normalize_off_ = v; }
   void dump_config() override;
 
  protected:
    void press_action() override {
     if (this->parent_ != nullptr && this->channel_ >= 1 && this->channel_ <= 16) {
-        if (this->aggressive_) {
+        if (this->normalize_) {
+          this->parent_->normalize_channel_config(this->channel_, this->normalize_off_);
+        } else if (this->aggressive_) {
           this->parent_->repair_channel_flags_aggressive(this->channel_);
         } else if (this->extended_) {
           this->parent_->repair_channel_flags_ext(this->channel_);
@@ -183,6 +188,8 @@ class WavinRepairButton : public button::Button, public Component {
   uint8_t channel_{0};
   bool extended_{false};
    bool aggressive_{false};
+    bool normalize_{false};
+    bool normalize_off_{false};
 };
 
 }  // namespace wavin_ahc9000

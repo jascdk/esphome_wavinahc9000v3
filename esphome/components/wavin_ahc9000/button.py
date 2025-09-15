@@ -13,6 +13,8 @@ WavinRepairButton = cg.esphome_ns.namespace("wavin_ahc9000").class_("WavinRepair
 # Optional extended repair clears additional flags that may lock keypad
 CONF_EXTENDED = "extended"
 CONF_AGGRESSIVE = "aggressive"
+CONF_NORMALIZE = "normalize"
+CONF_NORMALIZE_OFF = "normalize_off"
 
 CONFIG_SCHEMA = button.button_schema(WavinRepairButton).extend(
     {
@@ -20,6 +22,8 @@ CONFIG_SCHEMA = button.button_schema(WavinRepairButton).extend(
         cv.Required(CONF_CHANNEL): cv.int_range(min=1, max=16),
     cv.Optional(CONF_EXTENDED, default=False): cv.boolean,
     cv.Optional(CONF_AGGRESSIVE, default=False): cv.boolean,
+    cv.Optional(CONF_NORMALIZE, default=False): cv.boolean,
+    cv.Optional(CONF_NORMALIZE_OFF, default=False): cv.boolean,
     }
 )
 
@@ -30,4 +34,6 @@ async def to_code(config):
     cg.add(btn.set_channel(config[CONF_CHANNEL]))
     cg.add(btn.set_extended(config[CONF_EXTENDED]))
     cg.add(btn.set_aggressive(config[CONF_AGGRESSIVE]))
+    cg.add(btn.set_normalize(config[CONF_NORMALIZE]))
+    cg.add(btn.set_normalize_off(config[CONF_NORMALIZE_OFF]))
     cg.add(hub.add_active_channel(config[CONF_CHANNEL]))

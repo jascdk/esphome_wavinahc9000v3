@@ -444,6 +444,21 @@ void WavinAHC9000::refresh_channel_now(uint8_t channel) {
   this->urgent_channels_.push_back(channel);
 }
 
+void WavinAHC9000::normalize_channel_config(uint8_t channel, bool off) {
+  if (channel < 1 || channel > 16) return;
+  uint8_t page = (uint8_t) (channel - 1);
+  // Clear mode bits (0..2) and lock/program bits (3..6), then set standard 0x4000 + mode
+  uint16_t and_mask = (uint16_t) (~(PACKED_CONFIGURATION_MODE_MASK | PACKED_CONFIGURATION_STRICT_UNLOCK_MASK));
+  uint16_t or_mask = (uint16_t) (0x4000 | (off ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL));
+  if (this->write_masked_register(CAT_PACKED, page, PACKED_CONFIGURATION, and_mask, (uint16_t) (or_mask & 0x7FFF))) {
+    ESP_LOGW(TAG, "Normalize applied: ch=%u -> %s (0x%04X)", (unsigned) channel, off ? "OFF" : "HEAT", (unsigned) (0x4000 | (off ? 0x0001 : 0x0000)));
+    this->urgent_channels_.push_back(channel);
+    this->suspend_polling_until_ = millis() + 100;
+  } else {
+    ESP_LOGW(TAG, "Normalize failed: masked write not acknowledged for ch=%u", (unsigned) channel);
+  }
+}
+
 void WavinAHC9000::publish_updates() {
   ESP_LOGV(TAG, "Publishing updates: %u single climates, %u group climates",
            (unsigned) this->single_ch_climates_.size(), (unsigned) this->group_climates_.size());
