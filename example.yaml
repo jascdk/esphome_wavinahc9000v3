@@ -8,7 +8,9 @@ esp32:
     type: esp-idf
 
 external_components:
-  - source: github://heinekmadsen/esphome_wavinahc9000v3@main
+  - source:
+      type: local
+      path: esphome/components
     components: [wavin_ahc9000]
 
 logger:

@@ -17,37 +17,18 @@ CONF_CHANNEL = "channel"
 
 CONF_TYPE = "type"
 
-def _schema_for(t: str):
-    if t == "battery":
-        return sensor.sensor_schema(
-            unit_of_measurement=UNIT_PERCENT,
-            accuracy_decimals=0,
-            device_class=DEVICE_CLASS_BATTERY,
-            icon=ICON_BATTERY,
-        )
-    elif t == "temperature":
-        return sensor.sensor_schema(
-            unit_of_measurement=UNIT_CELSIUS,
-            accuracy_decimals=1,
-            device_class=DEVICE_CLASS_TEMPERATURE,
-        )
-    else:
-        raise cv.Invalid("Unsupported sensor type; use 'battery' or 'temperature'")
-
-CONFIG_SCHEMA = cv.All(
-    cv.Schema(
-        {
-            cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000),
-            cv.Required(CONF_CHANNEL): cv.int_range(min=1, max=16),
-            cv.Required(CONF_TYPE): cv.one_of("battery", "temperature", lower=True),
-        }
-    ).extend(cv.COMPONENT_SCHEMA),
+CONFIG_SCHEMA = sensor.sensor_schema().extend(
+    {
+        cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000),
+        cv.Required(CONF_CHANNEL): cv.int_range(min=1, max=16),
+        cv.Required(CONF_TYPE): cv.one_of("battery", "temperature", lower=True),
+    }
 )
 
 
 async def to_code(config):
     hub = await cg.get_variable(config[CONF_PARENT_ID])
-    sens = await sensor.new_sensor(_schema_for(config[CONF_TYPE]))
+    sens = await sensor.new_sensor(config)
     if config[CONF_TYPE] == "battery":
         cg.add(hub.add_channel_battery_sensor(config[CONF_CHANNEL], sens))
     else:
