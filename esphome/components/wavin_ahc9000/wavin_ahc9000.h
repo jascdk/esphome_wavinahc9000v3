@@ -3,7 +3,6 @@
 #include "esphome/components/climate/climate.h"
 #include "esphome/components/uart/uart.h"
 #include "esphome/core/component.h"
-#include "esphome/components/sensor/sensor.h"
 
 #include <vector>
 #include <map>
@@ -11,6 +10,10 @@
 
 namespace esphome {
 namespace wavin_ahc9000 {
+// Forward-declare to avoid hard include when battery sensors are unused
+namespace sensor {
+class Sensor;
+}
 
 // Forward
 class WavinZoneClimate;
