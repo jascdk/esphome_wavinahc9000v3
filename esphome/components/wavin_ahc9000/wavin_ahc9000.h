@@ -44,6 +44,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void request_status_channel(uint8_t ch_index);
   void repair_channel_flags(uint8_t channel);
   void repair_channel_flags_ext(uint8_t channel);
+  void repair_channel_flags_aggressive(uint8_t channel);
 
   // Data access
   float get_channel_current_temp(uint8_t channel) const;
@@ -122,6 +123,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_STANDBY_ALT = 0x04; // fallback for variant firmwares
   static constexpr uint16_t PACKED_CONFIGURATION_PROGRAM_BIT = 0x0008; // suspected schedule/program flag
   static constexpr uint16_t PACKED_CONFIGURATION_PROGRAM_MASK = 0x0018; // extended clear: bits 3 and 4
+  static constexpr uint16_t PACKED_CONFIGURATION_STRICT_UNLOCK_MASK = 0x0078; // bits 3..6 (avoid touching mode bits 0..2)
 };
 
 // Inline helpers for configuring sensors
@@ -162,21 +164,25 @@ class WavinRepairButton : public button::Button, public Component {
   void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
   void set_channel(uint8_t ch) { this->channel_ = ch; }
   void set_extended(bool v) { this->extended_ = v; }
+  void set_aggressive(bool v) { this->aggressive_ = v; }
   void dump_config() override;
 
  protected:
-  void press_action() override {
+   void press_action() override {
     if (this->parent_ != nullptr && this->channel_ >= 1 && this->channel_ <= 16) {
-      if (this->extended_) {
-        this->parent_->repair_channel_flags_ext(this->channel_);
-      } else {
-        this->parent_->repair_channel_flags(this->channel_);
-      }
+        if (this->aggressive_) {
+          this->parent_->repair_channel_flags_aggressive(this->channel_);
+        } else if (this->extended_) {
+          this->parent_->repair_channel_flags_ext(this->channel_);
+        } else {
+          this->parent_->repair_channel_flags(this->channel_);
+        }
     }
   }
   WavinAHC9000 *parent_{nullptr};
   uint8_t channel_{0};
   bool extended_{false};
+   bool aggressive_{false};
 };
 
 }  // namespace wavin_ahc9000

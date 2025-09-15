@@ -230,6 +230,21 @@ void WavinAHC9000::repair_channel_flags_ext(uint8_t channel) {
   }
 }
 
+void WavinAHC9000::repair_channel_flags_aggressive(uint8_t channel) {
+  if (channel < 1 || channel > 16) return;
+  uint8_t page = (uint8_t) (channel - 1);
+  // Aggressively clear bits 3..6 while preserving mode bits 0..2
+  uint16_t and_mask = (uint16_t) (~PACKED_CONFIGURATION_STRICT_UNLOCK_MASK);
+  uint16_t or_mask = 0x0000;
+  if (this->write_masked_register(CAT_PACKED, page, PACKED_CONFIGURATION, and_mask, or_mask)) {
+    ESP_LOGW(TAG, "Repair-AGG applied: cleared mask 0x%04X on ch=%u", (unsigned) PACKED_CONFIGURATION_STRICT_UNLOCK_MASK, (unsigned) channel);
+    this->urgent_channels_.push_back(channel);
+    this->suspend_polling_until_ = millis() + 100;
+  } else {
+    ESP_LOGW(TAG, "Repair-AGG failed: masked write not acknowledged for ch=%u", (unsigned) channel);
+  }
+}
+
 bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index, uint8_t count, std::vector<uint16_t> &out) {
   uint8_t msg[8];
   msg[0] = DEVICE_ADDR;
