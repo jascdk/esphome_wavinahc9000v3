@@ -349,7 +349,7 @@ climate::ClimateAction WavinAHC9000::get_channel_action(uint8_t channel) const {
 void WavinZoneClimate::dump_config() { LOG_CLIMATE("  ", "Wavin Zone Climate (minimal)", this); }
 climate::ClimateTraits WavinZoneClimate::traits() {
   climate::ClimateTraits t;
-  t.set_supported_modes({climate::CLIMATE_MODE_HEAT});
+  t.set_supported_modes({climate::CLIMATE_MODE_HEAT, climate::CLIMATE_MODE_OFF});
   t.set_supports_current_temperature(true);
   t.set_supports_action(true);
   t.set_visual_min_temperature(5);
