@@ -46,6 +46,12 @@ sensor:
     wavin_ahc9000_id: wavin
     name: "Zone 1 Battery"
     channel: 1
+    type: battery
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Zone 1 Temperature"
+    channel: 1
+    type: temperature
 
 api:
   services:

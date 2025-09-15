@@ -33,6 +33,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void add_channel_climate(WavinZoneClimate *c);
   void add_group_climate(WavinZoneClimate *c);
   void add_channel_battery_sensor(uint8_t ch, sensor::Sensor *s);
+  void add_channel_temperature_sensor(uint8_t ch, sensor::Sensor *s);
   void add_active_channel(uint8_t ch);
 
   // Send commands
@@ -80,6 +81,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::vector<WavinZoneClimate *> single_ch_climates_;
   std::vector<WavinZoneClimate *> group_climates_;
   std::map<uint8_t, sensor::Sensor *> battery_sensors_;
+  std::map<uint8_t, sensor::Sensor *> temperature_sensors_;
   std::vector<uint8_t> active_channels_;
   std::map<uint8_t, climate::ClimateMode> desired_mode_; // desired mode to reconcile after refresh
   std::set<uint8_t> strict_mode_channels_; // channels opting into strict baseline writes
@@ -130,6 +132,10 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
 // Inline helpers for configuring sensors
 inline void WavinAHC9000::add_channel_battery_sensor(uint8_t ch, sensor::Sensor *s) {
   this->battery_sensors_[ch] = s;
+}
+
+inline void WavinAHC9000::add_channel_temperature_sensor(uint8_t ch, sensor::Sensor *s) {
+  this->temperature_sensors_[ch] = s;
 }
 
 class WavinZoneClimate : public climate::Climate, public Component {

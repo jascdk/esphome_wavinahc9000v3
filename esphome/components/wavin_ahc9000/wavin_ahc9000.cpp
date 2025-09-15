@@ -157,6 +157,11 @@ void WavinAHC9000::update() {
             if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
               st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
               ESP_LOGD(TAG, "CH%u current=%.1fC", ch_num, st.current_temp_c);
+              // Publish to per-channel temperature sensor if configured
+              auto it_t = this->temperature_sensors_.find(ch_num);
+              if (it_t != this->temperature_sensors_.end() && it_t->second != nullptr && !std::isnan(st.current_temp_c)) {
+                it_t->second->publish_state(st.current_temp_c);
+              }
               // Battery status if available (0..10 scale)
               if (regs.size() > ELEM_BATTERY_STATUS) {
                 uint16_t raw = regs[ELEM_BATTERY_STATUS];
