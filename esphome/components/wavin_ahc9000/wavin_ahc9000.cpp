@@ -3,6 +3,7 @@
 #include "esphome/components/sensor/sensor.h"
 #include <vector>
 #include <cmath>
+#include <algorithm>
 
 namespace esphome {
 namespace wavin_ahc9000 {
@@ -62,10 +63,18 @@ void WavinAHC9000::update() {
     urgent_processed++;
   }
 
-  // Round-robin staged reads across channels; each channel advances one small step per update
-  for (uint8_t i = urgent_processed; i < this->poll_channels_per_cycle_; i++) {
-    uint8_t ch_page = this->next_channel_;   // 0..15
-    uint8_t ch_num = (uint8_t) (ch_page + 1); // 1..16
+  // Round-robin staged reads across active channels; each advances one step per update
+  if (this->active_channels_.empty()) {
+    // Default to all 1..16 if none explicitly configured
+    this->active_channels_.reserve(16);
+    for (uint8_t ch = 1; ch <= 16; ch++) this->active_channels_.push_back(ch);
+  }
+
+  for (uint8_t i = urgent_processed; i < this->poll_channels_per_cycle_ && !this->active_channels_.empty(); i++) {
+    // Wrap active index
+    if (this->next_active_index_ >= this->active_channels_.size()) this->next_active_index_ = 0;
+    uint8_t ch_num = this->active_channels_[this->next_active_index_]; // 1..16
+    uint8_t ch_page = (uint8_t) (ch_num - 1);
     auto &st = this->channels_[ch_num];
     uint8_t &step = this->channel_step_[ch_page];
 
@@ -145,8 +154,8 @@ void WavinAHC9000::update() {
       }
     }
 
-    // advance channel
-    this->next_channel_ = (uint8_t) ((this->next_channel_ + 1) % 16);
+  // advance to next active channel
+  this->next_active_index_ = (uint8_t) ((this->next_active_index_ + 1) % this->active_channels_.size());
   }
 
   // publish once per cycle
@@ -157,6 +166,12 @@ void WavinAHC9000::dump_config() { ESP_LOGCONFIG(TAG, "Wavin AHC9000 (UART test 
 
 void WavinAHC9000::add_channel_climate(WavinZoneClimate *c) { this->single_ch_climates_.push_back(c); }
 void WavinAHC9000::add_group_climate(WavinZoneClimate *c) { this->group_climates_.push_back(c); }
+void WavinAHC9000::add_active_channel(uint8_t ch) {
+  if (ch < 1 || ch > 16) return;
+  if (std::find(this->active_channels_.begin(), this->active_channels_.end(), ch) == this->active_channels_.end()) {
+    this->active_channels_.push_back(ch);
+  }
+}
 
 bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index, uint8_t count, std::vector<uint16_t> &out) {
   uint8_t msg[8];
@@ -322,6 +337,7 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
   if (channel < 1 || channel > 16) return;
   uint8_t page = (uint8_t) (channel - 1);
   uint16_t value_bits = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
+  this->desired_mode_[channel] = mode;
   bool ok = this->write_masked_register(CAT_PACKED, page, PACKED_CONFIGURATION, value_bits, PACKED_CONFIGURATION_MODE_MASK);
   if (!ok) {
     // Fallback: read-modify-write full register
@@ -331,6 +347,13 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
       uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (value_bits & PACKED_CONFIGURATION_MODE_MASK));
       ESP_LOGW(TAG, "WM fallback: PACKED_CONFIGURATION ch=%u cur=0x%04X next=0x%04X", (unsigned) channel, (unsigned) current, (unsigned) next);
       ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, next);
+      if (!ok && mode == climate::CLIMATE_MODE_OFF) {
+        // Try alternate standby bit pattern observed on some variants
+        uint16_t alt_bits = PACKED_CONFIGURATION_MODE_STANDBY_ALT;
+        next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (alt_bits & PACKED_CONFIGURATION_MODE_MASK));
+        ESP_LOGW(TAG, "OFF alt-bit try: PACKED_CONFIGURATION ch=%u next=0x%04X", (unsigned) channel, (unsigned) next);
+        ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, next);
+      }
     } else {
       ESP_LOGW(TAG, "WM fallback: read PACKED_CONFIGURATION failed for ch=%u", (unsigned) channel);
     }
@@ -402,10 +425,14 @@ void WavinZoneClimate::control(const climate::ClimateCall &call) {
   if (call.get_target_temperature().has_value()) {
     float t = *call.get_target_temperature();
   ESP_LOGD(TAG, "CTRL: target=%.1fC for %s", t, this->get_name().c_str());
-    if (this->single_channel_set_) {
-      this->parent_->write_channel_setpoint(this->single_channel_, t);
-    } else if (!this->members_.empty()) {
-      this->parent_->write_group_setpoint(this->members_, t);
+    // If we're turning OFF in the same call, skip setpoint write to avoid switching back to MANUAL
+    bool turning_off = call.get_mode().has_value() && (*call.get_mode() == climate::CLIMATE_MODE_OFF);
+    if (!turning_off) {
+      if (this->single_channel_set_) {
+        this->parent_->write_channel_setpoint(this->single_channel_, t);
+      } else if (!this->members_.empty()) {
+        this->parent_->write_group_setpoint(this->members_, t);
+      }
     }
     this->target_temperature = t;
   }

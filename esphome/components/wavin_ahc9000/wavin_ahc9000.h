@@ -30,6 +30,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void add_channel_climate(WavinZoneClimate *c);
   void add_group_climate(WavinZoneClimate *c);
   void add_channel_battery_sensor(uint8_t ch, sensor::Sensor *s);
+  void add_active_channel(uint8_t ch);
 
   // Send commands
   void write_channel_setpoint(uint8_t channel, float celsius);
@@ -72,6 +73,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::vector<WavinZoneClimate *> single_ch_climates_;
   std::vector<WavinZoneClimate *> group_climates_;
   std::map<uint8_t, sensor::Sensor *> battery_sensors_;
+  std::vector<uint8_t> active_channels_;
+  std::map<uint8_t, climate::ClimateMode> desired_mode_; // desired mode to reconcile after refresh
 
   float temp_divisor_{10.0f};
   uint32_t last_poll_ms_{0};
@@ -79,7 +82,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   uint32_t suspend_polling_until_{0};
   GPIOPin *tx_enable_pin_{nullptr};
   uint8_t poll_channels_per_cycle_{2};
-  uint8_t next_channel_{0};
+  uint8_t next_active_index_{0};
   uint8_t channel_step_[16] = {0};
   std::vector<uint8_t> urgent_channels_{}; // channels scheduled for immediate refresh on next update
 
@@ -109,6 +112,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_MASK = 0x07;
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_MANUAL = 0x00;
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_STANDBY = 0x01;
+  static constexpr uint16_t PACKED_CONFIGURATION_MODE_STANDBY_ALT = 0x04; // fallback for variant firmwares
 };
 
 // Inline helpers for configuring sensors

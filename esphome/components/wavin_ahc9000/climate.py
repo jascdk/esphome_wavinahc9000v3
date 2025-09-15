@@ -27,7 +27,10 @@ async def to_code(config):
     cg.add(var.set_parent(hub))
     if CONF_CHANNEL in config:
         cg.add(var.set_single_channel(config[CONF_CHANNEL]))
+        cg.add(hub.add_active_channel(config[CONF_CHANNEL]))
         cg.add(hub.add_channel_climate(var))
     if CONF_MEMBERS in config:
         cg.add(var.set_members(config[CONF_MEMBERS]))
+        for ch in config[CONF_MEMBERS]:
+            cg.add(hub.add_active_channel(ch))
         cg.add(hub.add_group_climate(var))

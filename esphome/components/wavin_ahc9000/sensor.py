@@ -26,3 +26,4 @@ async def to_code(config):
     hub = await cg.get_variable(config[CONF_PARENT_ID])
     sens = await sensor.new_sensor(config)
     cg.add(hub.add_channel_battery_sensor(config[CONF_CHANNEL], sens))
+    cg.add(hub.add_active_channel(config[CONF_CHANNEL]))
