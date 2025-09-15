@@ -344,7 +344,20 @@ void WavinZoneClimate::update_from_parent() {
     this->current_temperature = this->parent_->get_channel_current_temp(ch);
     this->target_temperature = this->parent_->get_channel_setpoint(ch);
     this->mode = this->parent_->get_channel_mode(ch);
-    this->action = this->parent_->get_channel_action(ch);
+    // Action: derive from temperatures with a small deadband, fallback to controller bit
+    const float db = 0.3f;  // hysteresis in °C
+    auto raw_action = this->parent_->get_channel_action(ch);
+    if (!std::isnan(this->current_temperature) && !std::isnan(this->target_temperature)) {
+      if (this->current_temperature > this->target_temperature + db) {
+        this->action = climate::CLIMATE_ACTION_IDLE;
+      } else if (this->current_temperature < this->target_temperature - db) {
+        this->action = climate::CLIMATE_ACTION_HEATING;
+      } else {
+        this->action = raw_action;
+      }
+    } else {
+      this->action = raw_action;
+    }
   } else if (!this->members_.empty()) {
     float sum_curr = 0.0f, sum_set = 0.0f;
     int n_curr = 0;
@@ -364,7 +377,19 @@ void WavinZoneClimate::update_from_parent() {
     if (n_curr > 0) this->current_temperature = sum_curr / n_curr;
     if (!this->members_.empty()) this->target_temperature = sum_set / this->members_.size();
     this->mode = all_off ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
-    this->action = any_heat ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
+    // Group action: prefer temperature comparison with deadband, fallback to any member heating
+    const float db = 0.3f;
+    if (!std::isnan(this->current_temperature) && !std::isnan(this->target_temperature)) {
+      if (this->current_temperature > this->target_temperature + db) {
+        this->action = climate::CLIMATE_ACTION_IDLE;
+      } else if (this->current_temperature < this->target_temperature - db) {
+        this->action = climate::CLIMATE_ACTION_HEATING;
+      } else {
+        this->action = any_heat ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
+      }
+    } else {
+      this->action = any_heat ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
+    }
   }
   this->publish_state();
 }
