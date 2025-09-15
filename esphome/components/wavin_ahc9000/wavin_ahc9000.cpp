@@ -26,79 +26,84 @@ void WavinAHC9000::setup() { ESP_LOGCONFIG(TAG, "Wavin AHC9000 hub setup"); }
 void WavinAHC9000::loop() {}
 
 void WavinAHC9000::update() {
-  // Staged read for channel 1 (page 0), one step per update to avoid blocking
-  uint8_t ch_page = 0;       // 0-based page
-  uint8_t ch_num = 1;        // 1-based channel id
-  auto &st = this->channels_[ch_num];
-
+  // Round-robin staged reads across channels; each channel advances one small step per update
   std::vector<uint16_t> regs;
-  uint8_t &step = this->channel_step_[0];
-  // Do up to 2 steps per update to surface values faster without long blocking
-  for (int i = 0; i < 2; i++) {
-    switch (step) {
-      case 0: {
-      if (this->read_registers(CAT_CHANNELS, ch_page, CH_PRIMARY_ELEMENT, 1, regs) && regs.size() >= 1) {
-        uint16_t v = regs[0];
-        st.primary_index = v & CH_PRIMARY_ELEMENT_ELEMENT_MASK;
-        st.all_tp_lost = (v & CH_PRIMARY_ELEMENT_ALL_TP_LOST_MASK) != 0;
-        ESP_LOGD(TAG, "CH%u primary elem=%u lost=%s", ch_num, (unsigned) st.primary_index, st.all_tp_lost ? "Y" : "N");
-      } else {
-        ESP_LOGW(TAG, "CH%u: primary element read failed", ch_num);
-      }
-        step = 1;
-        break;
-      }
-      case 1: {
-      if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
-        uint16_t mode_bits = regs[0] & PACKED_CONFIGURATION_MODE_MASK;
-        st.mode = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
-        ESP_LOGD(TAG, "CH%u mode=%s", ch_num, st.mode == climate::CLIMATE_MODE_OFF ? "OFF" : "HEAT");
-      } else {
-        ESP_LOGW(TAG, "CH%u: mode read failed", ch_num);
-      }
-        step = 2;
-        break;
-      }
-      case 2: {
-      if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
-        st.setpoint_c = this->raw_to_c(regs[0]);
-        ESP_LOGD(TAG, "CH%u setpoint=%.1fC", ch_num, st.setpoint_c);
-      } else {
-        ESP_LOGW(TAG, "CH%u: setpoint read failed", ch_num);
-      }
-        step = 3;
-        break;
-      }
-      case 3: {
-      if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
-        bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
-        st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
-        ESP_LOGD(TAG, "CH%u action=%s", ch_num, heating ? "HEATING" : "IDLE");
-      } else {
-        ESP_LOGW(TAG, "CH%u: action read failed", ch_num);
-      }
-        step = 4;
-        break;
-      }
-      case 4: {
-      if (!st.all_tp_lost && st.primary_index > 0) {
-        uint8_t elem_page = (uint8_t) (st.primary_index - 1);
-        if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
-          st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
-          ESP_LOGD(TAG, "CH%u current=%.1fC", ch_num, st.current_temp_c);
-        } else {
-          ESP_LOGW(TAG, "CH%u: element temp read failed", ch_num);
+  for (uint8_t i = 0; i < this->poll_channels_per_cycle_; i++) {
+    uint8_t ch_page = this->next_channel_;   // 0..15
+    uint8_t ch_num = (uint8_t) (ch_page + 1); // 1..16
+    auto &st = this->channels_[ch_num];
+    uint8_t &step = this->channel_step_[ch_page];
+
+    // Two steps per update to surface values faster
+    for (int s = 0; s < 2; s++) {
+      switch (step) {
+        case 0: {
+          if (this->read_registers(CAT_CHANNELS, ch_page, CH_PRIMARY_ELEMENT, 1, regs) && regs.size() >= 1) {
+            uint16_t v = regs[0];
+            st.primary_index = v & CH_PRIMARY_ELEMENT_ELEMENT_MASK;
+            st.all_tp_lost = (v & CH_PRIMARY_ELEMENT_ALL_TP_LOST_MASK) != 0;
+            ESP_LOGD(TAG, "CH%u primary elem=%u lost=%s", ch_num, (unsigned) st.primary_index, st.all_tp_lost ? "Y" : "N");
+          } else {
+            ESP_LOGW(TAG, "CH%u: primary element read failed", ch_num);
+          }
+          step = 1;
+          break;
         }
-      } else {
-        st.current_temp_c = NAN;
+        case 1: {
+          if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
+            uint16_t mode_bits = regs[0] & PACKED_CONFIGURATION_MODE_MASK;
+            st.mode = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+            ESP_LOGD(TAG, "CH%u mode=%s", ch_num, st.mode == climate::CLIMATE_MODE_OFF ? "OFF" : "HEAT");
+          } else {
+            ESP_LOGW(TAG, "CH%u: mode read failed", ch_num);
+          }
+          step = 2;
+          break;
+        }
+        case 2: {
+          if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+            st.setpoint_c = this->raw_to_c(regs[0]);
+            ESP_LOGD(TAG, "CH%u setpoint=%.1fC", ch_num, st.setpoint_c);
+          } else {
+            ESP_LOGW(TAG, "CH%u: setpoint read failed", ch_num);
+          }
+          step = 3;
+          break;
+        }
+        case 3: {
+          if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
+            bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
+            st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
+            ESP_LOGD(TAG, "CH%u action=%s", ch_num, heating ? "HEATING" : "IDLE");
+          } else {
+            ESP_LOGW(TAG, "CH%u: action read failed", ch_num);
+          }
+          step = 4;
+          break;
+        }
+        case 4: {
+          if (!st.all_tp_lost && st.primary_index > 0) {
+            uint8_t elem_page = (uint8_t) (st.primary_index - 1);
+            if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
+              st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
+              ESP_LOGD(TAG, "CH%u current=%.1fC", ch_num, st.current_temp_c);
+            } else {
+              ESP_LOGW(TAG, "CH%u: element temp read failed", ch_num);
+            }
+          } else {
+            st.current_temp_c = NAN;
+          }
+          step = 0;
+          break;
+        }
       }
-        step = 0;
-        break;
-      }
-  }
+    }
+
+    // advance channel
+    this->next_channel_ = (uint8_t) ((this->next_channel_ + 1) % 16);
   }
 
-  // Publish after processing this batch
+  // publish once per cycle
   this->publish_updates();
 }
 
@@ -158,6 +163,121 @@ bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index,
   return false;
 }
 
+bool WavinAHC9000::write_register(uint8_t category, uint8_t page, uint8_t index, uint16_t value) {
+  uint8_t msg[10];
+  msg[0] = DEVICE_ADDR;
+  msg[1] = FC_WRITE;
+  msg[2] = category;
+  msg[3] = index;
+  msg[4] = page;
+  msg[5] = 1;  // count
+  msg[6] = (uint8_t) (value >> 8);
+  msg[7] = (uint8_t) (value & 0xFF);
+  uint16_t crc = crc16(msg, 8);
+  msg[8] = (uint8_t) (crc & 0xFF);
+  msg[9] = (uint8_t) (crc >> 8);
+
+  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+  ESP_LOGD(TAG, "TX-WR: cat=%u idx=%u page=%u val=0x%04X", category, index, page, (unsigned) value);
+  this->write_array(msg, 10);
+  this->flush();
+  delayMicroseconds(250);
+  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
+
+  // Read ack
+  std::vector<uint8_t> buf;
+  uint32_t start = millis();
+  while (millis() - start < this->receive_timeout_ms_) {
+    while (this->available()) {
+      int c = this->read();
+      if (c < 0) break;
+      buf.push_back((uint8_t) c);
+      if (buf.size() >= 5) {
+        uint8_t expected = (uint8_t) (buf[2] + 5);
+        if (buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE && buf.size() == expected) {
+          uint16_t rcrc = crc16(buf.data(), buf.size());
+          bool ok = (rcrc == 0);
+          ESP_LOGD(TAG, "ACK-WR: %s", ok ? "OK" : "BAD-CRC");
+          return ok;
+        }
+      }
+    }
+    delay(1);
+  }
+  ESP_LOGW(TAG, "ACK-WR: timeout");
+  return false;
+}
+
+bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t index, uint16_t value, uint16_t mask) {
+  uint8_t msg[12];
+  msg[0] = DEVICE_ADDR;
+  msg[1] = FC_WRITE_MASKED;
+  msg[2] = category;
+  msg[3] = index;
+  msg[4] = page;
+  msg[5] = 1;  // count
+  msg[6] = (uint8_t) (value >> 8);
+  msg[7] = (uint8_t) (value & 0xFF);
+  msg[8] = (uint8_t) (mask >> 8);
+  msg[9] = (uint8_t) (mask & 0xFF);
+  uint16_t crc = crc16(msg, 10);
+  msg[10] = (uint8_t) (crc & 0xFF);
+  msg[11] = (uint8_t) (crc >> 8);
+
+  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+  ESP_LOGD(TAG, "TX-WM: cat=%u idx=%u page=%u val=0x%04X mask=0x%04X", category, index, page, (unsigned) value, (unsigned) mask);
+  this->write_array(msg, 12);
+  this->flush();
+  delayMicroseconds(250);
+  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
+
+  // Read ack
+  std::vector<uint8_t> buf;
+  uint32_t start = millis();
+  while (millis() - start < this->receive_timeout_ms_) {
+    while (this->available()) {
+      int c = this->read();
+      if (c < 0) break;
+      buf.push_back((uint8_t) c);
+      if (buf.size() >= 5) {
+        uint8_t expected = (uint8_t) (buf[2] + 5);
+        if (buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE_MASKED && buf.size() == expected) {
+          uint16_t rcrc = crc16(buf.data(), buf.size());
+          bool ok = (rcrc == 0);
+          ESP_LOGD(TAG, "ACK-WM: %s", ok ? "OK" : "BAD-CRC");
+          return ok;
+        }
+      }
+    }
+    delay(1);
+  }
+  ESP_LOGW(TAG, "ACK-WM: timeout");
+  return false;
+}
+
+// High-level write helpers
+void WavinAHC9000::write_channel_setpoint(uint8_t channel, float celsius) {
+  if (channel < 1 || channel > 16) return;
+  uint8_t page = (uint8_t) (channel - 1);
+  uint16_t raw = this->c_to_raw(celsius);
+  if (this->write_register(CAT_PACKED, page, PACKED_MANUAL_TEMPERATURE, raw)) {
+    this->channels_[channel].setpoint_c = celsius;
+  }
+}
+
+void WavinAHC9000::write_group_setpoint(const std::vector<uint8_t> &members, float celsius) {
+  for (auto ch : members) this->write_channel_setpoint(ch, celsius);
+}
+
+void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode) {
+  if (channel < 1 || channel > 16) return;
+  uint8_t page = (uint8_t) (channel - 1);
+  uint16_t value_bits = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
+  if (this->write_masked_register(CAT_PACKED, page, PACKED_CONFIGURATION, value_bits, PACKED_CONFIGURATION_MODE_MASK)) {
+    this->channels_[channel].mode = (mode == climate::CLIMATE_MODE_OFF) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+  }
+}
+
 void WavinAHC9000::publish_updates() {
   ESP_LOGV(TAG, "Publishing updates: %u single climates, %u group climates",
            (unsigned) this->single_ch_climates_.size(), (unsigned) this->group_climates_.size());
@@ -193,7 +313,31 @@ climate::ClimateTraits WavinZoneClimate::traits() {
   t.set_visual_temperature_step(0.5f);
   return t;
 }
-void WavinZoneClimate::control(const climate::ClimateCall &) {}
+void WavinZoneClimate::control(const climate::ClimateCall &call) {
+  // Mode control
+  if (call.get_mode().has_value()) {
+    auto m = *call.get_mode();
+    if (this->single_channel_set_) {
+      this->parent_->write_channel_mode(this->single_channel_, m);
+    } else if (!this->members_.empty()) {
+      for (auto ch : this->members_) this->parent_->write_channel_mode(ch, m);
+    }
+    this->mode = (m == climate::CLIMATE_MODE_OFF) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+  }
+
+  // Target temperature
+  if (call.get_target_temperature().has_value()) {
+    float t = *call.get_target_temperature();
+    if (this->single_channel_set_) {
+      this->parent_->write_channel_setpoint(this->single_channel_, t);
+    } else if (!this->members_.empty()) {
+      this->parent_->write_group_setpoint(this->members_, t);
+    }
+    this->target_temperature = t;
+  }
+
+  this->publish_state();
+}
 void WavinZoneClimate::update_from_parent() {
   if (this->single_channel_set_) {
     uint8_t ch = this->single_channel_;
