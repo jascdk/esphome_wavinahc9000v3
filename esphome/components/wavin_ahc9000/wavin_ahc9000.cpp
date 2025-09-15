@@ -286,9 +286,24 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
   if (channel < 1 || channel > 16) return;
   uint8_t page = (uint8_t) (channel - 1);
   uint16_t value_bits = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
-  if (this->write_masked_register(CAT_PACKED, page, PACKED_CONFIGURATION, value_bits, PACKED_CONFIGURATION_MODE_MASK)) {
+  bool ok = this->write_masked_register(CAT_PACKED, page, PACKED_CONFIGURATION, value_bits, PACKED_CONFIGURATION_MODE_MASK);
+  if (!ok) {
+    // Fallback: read-modify-write full register
+    std::vector<uint16_t> regs;
+    if (this->read_registers(CAT_PACKED, page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
+      uint16_t current = regs[0];
+      uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (value_bits & PACKED_CONFIGURATION_MODE_MASK));
+      ESP_LOGW(TAG, "WM fallback: PACKED_CONFIGURATION ch=%u cur=0x%04X next=0x%04X", (unsigned) channel, (unsigned) current, (unsigned) next);
+      ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, next);
+    } else {
+      ESP_LOGW(TAG, "WM fallback: read PACKED_CONFIGURATION failed for ch=%u", (unsigned) channel);
+    }
+  }
+  if (ok) {
     this->channels_[channel].mode = (mode == climate::CLIMATE_MODE_OFF) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
     this->refresh_channel_now(channel);
+  } else {
+    ESP_LOGW(TAG, "Mode write failed for ch=%u", (unsigned) channel);
   }
 }
 
@@ -361,6 +376,7 @@ void WavinZoneClimate::control(const climate::ClimateCall &call) {
   // Mode control
   if (call.get_mode().has_value()) {
     auto m = *call.get_mode();
+  ESP_LOGD(TAG, "CTRL: mode=%s for %s", (m == climate::CLIMATE_MODE_OFF ? "OFF" : "HEAT"), this->get_name().c_str());
     if (this->single_channel_set_) {
       this->parent_->write_channel_mode(this->single_channel_, m);
     } else if (!this->members_.empty()) {
@@ -372,6 +388,7 @@ void WavinZoneClimate::control(const climate::ClimateCall &call) {
   // Target temperature
   if (call.get_target_temperature().has_value()) {
     float t = *call.get_target_temperature();
+  ESP_LOGD(TAG, "CTRL: target=%.1fC for %s", t, this->get_name().c_str());
     if (this->single_channel_set_) {
       this->parent_->write_channel_setpoint(this->single_channel_, t);
     } else if (!this->members_.empty()) {
