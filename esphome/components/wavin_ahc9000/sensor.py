@@ -39,6 +39,10 @@ async def to_code(config):
         cg.add(sens.set_device_class(DEVICE_CLASS_TEMPERATURE))
         cg.add(sens.set_unit_of_measurement(UNIT_CELSIUS))
         cg.add(sens.set_accuracy_decimals(1))
+    # Append channel suffix to name if provided
+    if "name" in config:
+        ch = config[CONF_CHANNEL]
+        cg.add(sens.set_name(f"{config['name']}_ch_{ch}"))
     if config[CONF_TYPE] == "battery":
         cg.add(hub.add_channel_battery_sensor(config[CONF_CHANNEL], sens))
     else:
