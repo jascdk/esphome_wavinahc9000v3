@@ -141,10 +141,6 @@ bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index,
   return false;
 }
 
-float WavinAHC9000::get_channel_current_temp(uint8_t) const { return NAN; }
-float WavinAHC9000::get_channel_setpoint(uint8_t) const { return NAN; }
-climate::ClimateMode WavinAHC9000::get_channel_mode(uint8_t) const { return climate::CLIMATE_MODE_HEAT; }
-climate::ClimateAction WavinAHC9000::get_channel_action(uint8_t) const { return climate::CLIMATE_ACTION_OFF; }
 void WavinAHC9000::publish_updates() {
   ESP_LOGV(TAG, "Publishing updates: %u single climates, %u group climates",
            (unsigned) this->single_ch_climates_.size(), (unsigned) this->group_climates_.size());
