@@ -29,6 +29,16 @@ CONFIG_SCHEMA = sensor.sensor_schema().extend(
 async def to_code(config):
     hub = await cg.get_variable(config[CONF_PARENT_ID])
     sens = await sensor.new_sensor(config)
+    # Apply defaults based on sensor type
+    if config[CONF_TYPE] == "battery":
+        cg.add(sens.set_device_class(DEVICE_CLASS_BATTERY))
+        cg.add(sens.set_unit_of_measurement(UNIT_PERCENT))
+        cg.add(sens.set_icon(ICON_BATTERY))
+        cg.add(sens.set_accuracy_decimals(0))
+    else:
+        cg.add(sens.set_device_class(DEVICE_CLASS_TEMPERATURE))
+        cg.add(sens.set_unit_of_measurement(UNIT_CELSIUS))
+        cg.add(sens.set_accuracy_decimals(1))
     if config[CONF_TYPE] == "battery":
         cg.add(hub.add_channel_battery_sensor(config[CONF_CHANNEL], sens))
     else:
