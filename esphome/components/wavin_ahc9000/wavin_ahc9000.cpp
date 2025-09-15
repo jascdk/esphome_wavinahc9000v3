@@ -27,9 +27,43 @@ void WavinAHC9000::setup() { ESP_LOGCONFIG(TAG, "Wavin AHC9000 hub setup"); }
 void WavinAHC9000::loop() {}
 
 void WavinAHC9000::update() {
-  // Round-robin staged reads across channels; each channel advances one small step per update
+  // If polling is temporarily suspended (after a write), skip until window expires
+  if (this->suspend_polling_until_ != 0 && millis() < this->suspend_polling_until_) {
+    ESP_LOGV(TAG, "Polling suspended for %u ms more", (unsigned) (this->suspend_polling_until_ - millis()));
+    return;
+  }
+
+  // Process any urgent channels first (scheduled due to a write)
   std::vector<uint16_t> regs;
-  for (uint8_t i = 0; i < this->poll_channels_per_cycle_; i++) {
+  uint8_t urgent_processed = 0;
+  while (!this->urgent_channels_.empty() && urgent_processed < this->poll_channels_per_cycle_) {
+    uint8_t ch = this->urgent_channels_.front();
+    this->urgent_channels_.erase(this->urgent_channels_.begin());
+    uint8_t ch_page = (uint8_t) (ch - 1);
+    auto &st = this->channels_[ch];
+    // Perform a compact refresh sequence for the channel
+    if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
+      uint16_t mode_bits = regs[0] & PACKED_CONFIGURATION_MODE_MASK;
+      st.mode = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+    }
+    if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+      st.setpoint_c = this->raw_to_c(regs[0]);
+    }
+    if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
+      bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
+      st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
+    }
+    if (!st.all_tp_lost && st.primary_index > 0) {
+      uint8_t elem_page = (uint8_t) (st.primary_index - 1);
+      if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
+        st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
+      }
+    }
+    urgent_processed++;
+  }
+
+  // Round-robin staged reads across channels; each channel advances one small step per update
+  for (uint8_t i = urgent_processed; i < this->poll_channels_per_cycle_; i++) {
     uint8_t ch_page = this->next_channel_;   // 0..15
     uint8_t ch_num = (uint8_t) (ch_page + 1); // 1..16
     auto &st = this->channels_[ch_num];
@@ -274,7 +308,9 @@ void WavinAHC9000::write_channel_setpoint(uint8_t channel, float celsius) {
   uint16_t raw = this->c_to_raw(celsius);
   if (this->write_register(CAT_PACKED, page, PACKED_MANUAL_TEMPERATURE, raw)) {
     this->channels_[channel].setpoint_c = celsius;
-    this->refresh_channel_now(channel);
+  // Schedule a quick refresh on next cycle and briefly suspend normal polling to avoid collisions
+  this->urgent_channels_.push_back(channel);
+  this->suspend_polling_until_ = millis() + 100; // 100 ms guard
   }
 }
 
@@ -301,7 +337,8 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
   }
   if (ok) {
     this->channels_[channel].mode = (mode == climate::CLIMATE_MODE_OFF) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
-    this->refresh_channel_now(channel);
+    this->urgent_channels_.push_back(channel);
+    this->suspend_polling_until_ = millis() + 100; // 100 ms guard
   } else {
     ESP_LOGW(TAG, "Mode write failed for ch=%u", (unsigned) channel);
   }
@@ -309,32 +346,8 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
 
 void WavinAHC9000::refresh_channel_now(uint8_t channel) {
   if (channel < 1 || channel > 16) return;
-  uint8_t ch_page = (uint8_t) (channel - 1);
-  auto &st = this->channels_[channel];
-
-  std::vector<uint16_t> regs;
-  // Mode/config
-  if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
-    uint16_t mode_bits = regs[0] & PACKED_CONFIGURATION_MODE_MASK;
-    st.mode = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
-  }
-  // Setpoint
-  if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
-    st.setpoint_c = this->raw_to_c(regs[0]);
-  }
-  // Action
-  if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
-    bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
-    st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
-  }
-  // Temperature via element
-  if (!st.all_tp_lost && st.primary_index > 0) {
-    uint8_t elem_page = (uint8_t) (st.primary_index - 1);
-    if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
-      st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
-    }
-  }
-  this->publish_updates();
+  // Just schedule urgent refresh; actual reads happen in update()
+  this->urgent_channels_.push_back(channel);
 }
 
 void WavinAHC9000::publish_updates() {
