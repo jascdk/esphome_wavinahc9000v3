@@ -7,6 +7,7 @@
 
 #include <vector>
 #include <map>
+#include <cmath>
 
 namespace esphome {
 namespace wavin_ahc9000 {

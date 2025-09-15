@@ -26,11 +26,7 @@ uart:
 wavin_ahc9000:
   id: wavin
   uart_id: uart_wavin
-  tx_enable_pin: GPIO5
-  temp_divisor: 10.0
-  receive_timeout_ms: 1000
   update_interval: 5s
-  poll_channels_per_cycle: 2
 
 climate:
   - platform: wavin_ahc9000
@@ -41,12 +37,6 @@ climate:
     wavin_ahc9000_id: wavin
     name: "Living Area"
     members: [2,3]
-
-sensor:
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Zone 1 Battery"
-    channel: 1
 
 wifi:
   ssid: "<your-ssid>"

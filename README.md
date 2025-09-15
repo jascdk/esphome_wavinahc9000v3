@@ -1,10 +1,10 @@
-# ESPHome component: Wavin AHC 9000 / Jablotron AC-116 (UART protocol)
+# ESPHome component: Wavin AHC 9000 / Jablotron AC-116 (restart, minimal scaffold)
 
-This repo contains an ESPHome external component to integrate a Wavin AHC 9000 (aka Jablotron AC-116) floor heating controller using its serial protocol (Modbus-like with custom function codes 0x43/0x44/0x45). It exposes one Home Assistant Climate entity per zone/channel and supports grouping multiple channels into one climate entity when they are paired.
+This repo contains an ESPHome external component to integrate a Wavin AHC 9000 (aka Jablotron AC-116) floor heating controller using its serial protocol (Modbus-like with custom function codes 0x43/0x44/0x45).
 
-Status: working scaffold using the dkjonas mapping (categories/pages/indices). Adjust indices if your firmware differs.
+Status: fresh restart with a minimal, compiling scaffold. Entities can be defined (single-channel or grouped) but there is no UART protocol logic yet. We’ll re-introduce reading/writing step-by-step next.
 
-## Features
+## Goals (to be reintroduced incrementally)
 - 16 channels (zones)
 - Climate entity per channel
 - Optional grouped climates that aggregate multiple channels into one entity
@@ -16,12 +16,15 @@ Status: working scaffold using the dkjonas mapping (categories/pages/indices). A
 - RS-485 connection to the controller.
 - Use an ESP32 or ESP8266 with a TTL↔RS485 adapter.
 
-## Example ESPHome YAML (explicit platforms)
+## Example ESPHome YAML (explicit platforms, minimal)
 ```yaml
 esphome:
   name: wavin-gateway
-  platform: ESP32
+
+esp32:
   board: esp32dev
+  framework:
+    type: esp-idf
 
 external_components:
   - source: github://heinekmadsen/esphome_wavinahc9000v3@main
@@ -38,9 +41,8 @@ uart:
 wavin_ahc9000:
   id: wavin
   uart_id: uart_wavin
-  tx_enable_pin: GPIO5  # Optional, for RS-485 DE/RE
-  temp_divisor: 10.0  # raw temperature scaling; adjust per spec
-  receive_timeout_ms: 1000
+  # tx_enable_pin: GPIO5  # Optional, for RS-485 DE/RE
+  # temp_divisor: 10.0    # raw temperature scaling; adjust per spec
   update_interval: 5s
 
 climate:
@@ -53,11 +55,12 @@ climate:
     name: "Living Area"
     members: [2, 3]
 
-sensor:
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Zone 1 Battery"
-    channel: 1
+# Optional battery sensors will be wired in when protocol is added back
+# sensor:
+#   - platform: wavin_ahc9000
+#     wavin_ahc9000_id: wavin
+#     name: "Zone 1 Battery"
+#     channel: 1
 
 logger:
   level: DEBUG
@@ -65,13 +68,12 @@ logger:
 
 Note: climates are defined explicitly under the `climate:` section using platform `wavin_ahc9000` (single channel or grouped). Optional per-channel battery sensors use `sensor: - platform: wavin_ahc9000`.
 
-## Implementation Plan
-- Protocol per dkjonas reference:
-  - Categories: CHANNELS (primary element, timer event), ELEMENTS (air temperature), PACKED (manual temp, standby temp, configuration/mode)
-  - Function codes: 0x43 (read), 0x44 (write), 0x45 (write masked), CRC16 Modbus
-- Scaling: `temp_divisor` default 10.0 for 0.1°C values
-- Entities are created automatically; no extra `climate:` block needed
-  - Battery sensors are published as Sensor entities named "Zone N Battery" (0-100)
+## Implementation Plan (phased)
+1) Minimal compile and entities visible (this commit)
+2) Add UART framing + CRC, read a single register (log-only)
+3) Add staged polling for per-channel primary element, setpoint, temps, action
+4) Publish values to climates; wire write path for mode/setpoint
+5) Add battery sensors
 
 ## Aggregation semantics
 - Current temperature: average across member channels
@@ -130,7 +132,7 @@ sensor:
     channel: 1
 ```
 
-3) RS-485 transceiver with TX enable and tighter polling:
+3) RS-485 transceiver with TX enable and tighter polling (when protocol returns):
 ```yaml
 wavin_ahc9000:
   uart_id: uart_wavin
