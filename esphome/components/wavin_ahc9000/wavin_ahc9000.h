@@ -22,6 +22,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void set_tx_enable_pin(GPIOPin *p) { this->tx_enable_pin_ = p; }
   void set_poll_channels_per_cycle(uint8_t n) { this->poll_channels_per_cycle_ = n == 0 ? 1 : (n > 16 ? 16 : n); }
   void set_allow_mode_writes(bool v) { this->allow_mode_writes_ = v; }
+  bool get_allow_mode_writes() const { return this->allow_mode_writes_; }
 
   void setup() override;
   void loop() override;

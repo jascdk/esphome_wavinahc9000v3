@@ -437,7 +437,7 @@ void WavinZoneClimate::control(const climate::ClimateCall &call) {
   if (call.get_mode().has_value()) {
     auto m = *call.get_mode();
   ESP_LOGD(TAG, "CTRL: mode=%s for %s", (m == climate::CLIMATE_MODE_OFF ? "OFF" : "HEAT"), this->get_name().c_str());
-    if (this->parent_->allow_mode_writes_) {
+  if (this->parent_->get_allow_mode_writes()) {
       if (this->single_channel_set_) {
         this->parent_->write_channel_mode(this->single_channel_, m);
       } else if (!this->members_.empty()) {

@@ -14,7 +14,7 @@ external_components:
 logger:
   level: DEBUG
   logs:
-    wavin_ahc9000: VERY_VERBOSE
+    wavin_ahc9000: DEBUG
 
 uart:
   id: uart_wavin
