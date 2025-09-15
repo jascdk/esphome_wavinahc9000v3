@@ -2,7 +2,7 @@
 
 This repo contains an ESPHome external component to integrate a Wavin AHC 9000 (aka Jablotron AC-116) floor heating controller using its serial protocol (Modbus-like with custom function codes 0x43/0x44/0x45).
 
-Status: fresh restart with a minimal, compiling scaffold. Entities can be defined (single-channel or grouped) but there is no UART protocol logic yet. We’ll re-introduce reading/writing step-by-step next.
+Status: restarted and functional basics in place: multi-channel staged polling, read current/setpoint/mode/action, and write setpoint/mode. Battery sensors supported per channel.
 
 ## Goals (to be reintroduced incrementally)
 - 16 channels (zones)
@@ -55,12 +55,11 @@ climate:
     name: "Living Area"
     members: [2, 3]
 
-# Optional battery sensors will be wired in when protocol is added back
-# sensor:
-#   - platform: wavin_ahc9000
-#     wavin_ahc9000_id: wavin
-#     name: "Zone 1 Battery"
-#     channel: 1
+sensor:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Zone 1 Battery"
+    channel: 1
 
 logger:
   level: DEBUG

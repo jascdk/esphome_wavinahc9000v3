@@ -38,6 +38,12 @@ climate:
     name: "Living Area"
     members: [2,3]
 
+sensor:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Zone 1 Battery"
+    channel: 1
+
 wifi:
   ssid: "<your-ssid>"
   password: "<your-password>"

@@ -1,5 +1,6 @@
 #include "wavin_ahc9000.h"
 #include "esphome/core/log.h"
+#include "esphome/components/sensor/sensor.h"
 #include <vector>
 #include <cmath>
 
@@ -87,6 +88,17 @@ void WavinAHC9000::update() {
             if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
               st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
               ESP_LOGD(TAG, "CH%u current=%.1fC", ch_num, st.current_temp_c);
+              // Battery status if available (0..10 scale)
+              if (regs.size() > ELEM_BATTERY_STATUS) {
+                uint16_t raw = regs[ELEM_BATTERY_STATUS];
+                uint8_t steps = (raw > 10) ? 10 : (uint8_t) raw;
+                uint8_t pct = (uint8_t) (steps * 10);
+                st.battery_pct = pct;
+                auto it = this->battery_sensors_.find(ch_num);
+                if (it != this->battery_sensors_.end() && it->second != nullptr) {
+                  it->second->publish_state((float) pct);
+                }
+              }
             } else {
               ESP_LOGW(TAG, "CH%u: element temp read failed", ch_num);
             }
