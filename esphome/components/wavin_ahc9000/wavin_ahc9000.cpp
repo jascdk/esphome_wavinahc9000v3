@@ -274,6 +274,7 @@ void WavinAHC9000::write_channel_setpoint(uint8_t channel, float celsius) {
   uint16_t raw = this->c_to_raw(celsius);
   if (this->write_register(CAT_PACKED, page, PACKED_MANUAL_TEMPERATURE, raw)) {
     this->channels_[channel].setpoint_c = celsius;
+    this->refresh_channel_now(channel);
   }
 }
 
@@ -287,7 +288,38 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
   uint16_t value_bits = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
   if (this->write_masked_register(CAT_PACKED, page, PACKED_CONFIGURATION, value_bits, PACKED_CONFIGURATION_MODE_MASK)) {
     this->channels_[channel].mode = (mode == climate::CLIMATE_MODE_OFF) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+    this->refresh_channel_now(channel);
   }
+}
+
+void WavinAHC9000::refresh_channel_now(uint8_t channel) {
+  if (channel < 1 || channel > 16) return;
+  uint8_t ch_page = (uint8_t) (channel - 1);
+  auto &st = this->channels_[channel];
+
+  std::vector<uint16_t> regs;
+  // Mode/config
+  if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
+    uint16_t mode_bits = regs[0] & PACKED_CONFIGURATION_MODE_MASK;
+    st.mode = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+  }
+  // Setpoint
+  if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+    st.setpoint_c = this->raw_to_c(regs[0]);
+  }
+  // Action
+  if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
+    bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
+    st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
+  }
+  // Temperature via element
+  if (!st.all_tp_lost && st.primary_index > 0) {
+    uint8_t elem_page = (uint8_t) (st.primary_index - 1);
+    if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
+      st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
+    }
+  }
+  this->publish_updates();
 }
 
 void WavinAHC9000::publish_updates() {

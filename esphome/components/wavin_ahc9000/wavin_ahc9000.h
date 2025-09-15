@@ -35,6 +35,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void write_channel_setpoint(uint8_t channel, float celsius);
   void write_group_setpoint(const std::vector<uint8_t> &members, float celsius);
   void write_channel_mode(uint8_t channel, climate::ClimateMode mode);
+  void refresh_channel_now(uint8_t channel);
   void request_status();
   void request_status_channel(uint8_t ch_index);
 
