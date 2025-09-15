@@ -9,6 +9,8 @@ namespace esphome {
 namespace wavin_ahc9000 {
 
 static const char *const TAG = "wavin_ahc9000";
+void WavinRepairButton::dump_config() { LOG_BUTTON("  ", "Wavin Repair Button", this); }
+
 
 // Simple Modbus CRC16 (0xA001 poly)
 static uint16_t crc16(const uint8_t *frame, size_t len) {

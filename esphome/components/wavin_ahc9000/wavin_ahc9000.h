@@ -159,7 +159,7 @@ class WavinRepairButton : public button::Button, public Component {
  public:
   void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
   void set_channel(uint8_t ch) { this->channel_ = ch; }
-  void dump_config() override { LOG_BUTTON("  ", "Wavin Repair Button", this); }
+  void dump_config() override;
 
  protected:
   void press_action() override {
