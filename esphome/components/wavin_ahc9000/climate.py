@@ -17,7 +17,7 @@ CONFIG_SCHEMA = climate.climate_schema(WavinZoneClimate).extend(
         cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000),
         cv.Optional(CONF_CHANNEL): cv.int_range(min=1, max=16),
         cv.Optional(CONF_MEMBERS): cv.ensure_list(cv.int_range(min=1, max=16)),
-    cv.Optional(CONF_STRICT_MODE_WRITES, default=False): cv.boolean,
+        cv.Optional(CONF_STRICT_MODE_WRITES, default=False): cv.boolean,
     }
 )
 
@@ -39,3 +39,4 @@ async def to_code(config):
         for ch in config[CONF_MEMBERS]:
             cg.add(hub.add_active_channel(ch))
         cg.add(hub.add_group_climate(var))
+    

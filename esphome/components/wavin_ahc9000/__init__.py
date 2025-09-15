@@ -1,11 +1,11 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import uart, climate
+from esphome.components import uart, climate, sensor
 from esphome.const import CONF_ID
 from esphome import pins
 
 CODEOWNERS = ["@you"]
-AUTO_LOAD = ["climate", "uart"]
+AUTO_LOAD = ["climate", "uart", "sensor"]
 
 ns = cg.esphome_ns.namespace("wavin_ahc9000")
 WavinAHC9000 = ns.class_("WavinAHC9000", cg.PollingComponent, uart.UARTDevice)
@@ -17,6 +17,11 @@ CONF_TEMP_DIVISOR = "temp_divisor"
 CONF_RECEIVE_TIMEOUT_MS = "receive_timeout_ms"
 CONF_POLL_CHANNELS_PER_CYCLE = "poll_channels_per_cycle"
 CONF_ALLOW_MODE_WRITES = "allow_mode_writes"
+CONF_AUTO_CLIMATES = "auto_climates"
+CONF_TEMPERATURE_SENSORS = "temperature_sensors"
+CONF_BATTERY_SENSORS = "battery_sensors"
+CONF_AUTO_CHANNELS = "auto_channels"
+CONF_NAME_PREFIX = "name_prefix"
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -27,6 +32,12 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_RECEIVE_TIMEOUT_MS, default=1000): cv.positive_int,
         cv.Optional(CONF_POLL_CHANNELS_PER_CYCLE, default=2): cv.int_range(min=1, max=16),
     cv.Optional(CONF_ALLOW_MODE_WRITES, default=True): cv.boolean,
+    # Auto-generation options
+    cv.Optional(CONF_AUTO_CLIMATES, default=True): cv.boolean,
+    cv.Optional(CONF_TEMPERATURE_SENSORS, default=False): cv.boolean,
+    cv.Optional(CONF_BATTERY_SENSORS, default=False): cv.boolean,
+    cv.Optional(CONF_AUTO_CHANNELS, default="all"): cv.Any(cv.one_of("all", lower=True), cv.ensure_list(cv.int_range(min=1, max=16))),
+    cv.Optional(CONF_NAME_PREFIX, default="Zone "): cv.string,
     }
 ).extend(uart.UART_DEVICE_SCHEMA).extend(cv.polling_component_schema("5s"))
 
@@ -46,3 +57,43 @@ async def to_code(config):
         cg.add(var.set_poll_channels_per_cycle(config[CONF_POLL_CHANNELS_PER_CYCLE]))
     if CONF_ALLOW_MODE_WRITES in config:
         cg.add(var.set_allow_mode_writes(config[CONF_ALLOW_MODE_WRITES]))
+
+    # Auto-generate entities if requested
+    channels = list(range(1, 17)) if (isinstance(config.get(CONF_AUTO_CHANNELS, "all"), str) and str(config.get(CONF_AUTO_CHANNELS)).lower() == "all") else list(config.get(CONF_AUTO_CHANNELS, []))
+    prefix = config.get(CONF_NAME_PREFIX, "Zone ")
+
+    # Climates for all channels
+    if config.get(CONF_AUTO_CLIMATES, True):
+        for ch in channels:
+            c = cg.new_Pvariable(WavinZoneClimate)
+            # Minimal child config with a generated name
+            child_cfg = {"name": f"{prefix}{ch}"}
+            await climate.register_climate(c, child_cfg)
+            cg.add(c.set_parent(var))
+            cg.add(c.set_single_channel(ch))
+            cg.add(var.add_active_channel(ch))
+            cg.add(var.add_channel_climate(c))
+
+    # Temperature and battery sensors per channel
+    if config.get(CONF_TEMPERATURE_SENSORS, False) or config.get(CONF_BATTERY_SENSORS, False):
+        for ch in channels:
+            if config.get(CONF_TEMPERATURE_SENSORS, False):
+                s_cfg = {"name": f"{prefix}{ch} Temperature"}
+                s = await sensor.new_sensor(s_cfg)
+                # Temperature defaults
+                from esphome.const import DEVICE_CLASS_TEMPERATURE, UNIT_CELSIUS
+                cg.add(s.set_device_class(DEVICE_CLASS_TEMPERATURE))
+                cg.add(s.set_unit_of_measurement(UNIT_CELSIUS))
+                cg.add(s.set_accuracy_decimals(1))
+                cg.add(var.add_channel_temperature_sensor(ch, s))
+                cg.add(var.add_active_channel(ch))
+            if config.get(CONF_BATTERY_SENSORS, False):
+                b_cfg = {"name": f"{prefix}{ch} Battery"}
+                b = await sensor.new_sensor(b_cfg)
+                # Battery defaults
+                from esphome.const import DEVICE_CLASS_BATTERY, UNIT_PERCENT
+                cg.add(b.set_device_class(DEVICE_CLASS_BATTERY))
+                cg.add(b.set_unit_of_measurement(UNIT_PERCENT))
+                cg.add(b.set_accuracy_decimals(0))
+                cg.add(var.add_channel_battery_sensor(ch, b))
+                cg.add(var.add_active_channel(ch))

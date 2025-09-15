@@ -32,28 +32,16 @@ wavin_ahc9000:
   uart_id: uart_wavin
   update_interval: 5s
   allow_mode_writes: false
+  # Auto-generate entities
+  auto_climates: true
+  temperature_sensors: true
+  battery_sensors: true
+  auto_channels: all
+  name_prefix: "Zone "
 
-climate:
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Zone 1"
-    channel: 1
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Living Area"
-    members: [2,3]
+climate: []
 
-sensor:
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Zone 1 Battery"
-    channel: 1
-    type: battery
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Zone 1 Temperature"
-    channel: 1
-    type: temperature
+sensor: []
 
 api:
   services:
