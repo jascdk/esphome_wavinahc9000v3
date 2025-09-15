@@ -50,7 +50,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   // Low-level protocol helpers (dkjonas framing)
   bool read_registers(uint8_t category, uint8_t page, uint8_t index, uint8_t count, std::vector<uint16_t> &out);
   bool write_register(uint8_t category, uint8_t page, uint8_t index, uint16_t value);
-  bool write_masked_register(uint8_t category, uint8_t page, uint8_t index, uint16_t value, uint16_t mask);
+  // Masked write: apply (reg & and_mask) | or_mask semantics
+  bool write_masked_register(uint8_t category, uint8_t page, uint8_t index, uint16_t and_mask, uint16_t or_mask);
 
   void publish_updates();
 

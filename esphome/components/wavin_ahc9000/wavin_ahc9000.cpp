@@ -44,8 +44,40 @@ void WavinAHC9000::update() {
     auto &st = this->channels_[ch];
     // Perform a compact refresh sequence for the channel
     if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
-      uint16_t mode_bits = regs[0] & PACKED_CONFIGURATION_MODE_MASK;
-      st.mode = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+      uint16_t raw_cfg = regs[0];
+      uint16_t mode_bits = raw_cfg & PACKED_CONFIGURATION_MODE_MASK;
+      bool is_off = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) || (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY_ALT);
+      st.mode = is_off ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+      ESP_LOGD(TAG, "CH%u cfg=0x%04X mode=%s", (unsigned) ch, (unsigned) raw_cfg, is_off ? "OFF" : "HEAT");
+      // Reconcile desired mode if pending and mismatch
+      auto it_des = this->desired_mode_.find(ch);
+      if (it_des != this->desired_mode_.end()) {
+        auto want = it_des->second;
+        if (want != st.mode) {
+          uint16_t current = raw_cfg;
+          // Try ALT standby first for OFF, else MANUAL
+          uint16_t new_bits = (want == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY_ALT : PACKED_CONFIGURATION_MODE_MANUAL;
+          uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (new_bits & PACKED_CONFIGURATION_MODE_MASK));
+          ESP_LOGW(TAG, "Reconciling mode for ch=%u cur=0x%04X next=0x%04X", (unsigned) ch, (unsigned) current, (unsigned) next);
+          bool wrote = this->write_register(CAT_PACKED, ch_page, PACKED_CONFIGURATION, next);
+          if (!wrote && want == climate::CLIMATE_MODE_OFF) {
+            uint16_t std_bits = PACKED_CONFIGURATION_MODE_STANDBY;
+            next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (std_bits & PACKED_CONFIGURATION_MODE_MASK));
+            ESP_LOGW(TAG, "Reconciling std-bit try ch=%u next=0x%04X", (unsigned) ch, (unsigned) next);
+            wrote = this->write_register(CAT_PACKED, ch_page, PACKED_CONFIGURATION, next);
+          }
+          if (wrote) {
+            // Schedule another quick check
+            this->urgent_channels_.push_back(ch);
+            this->suspend_polling_until_ = millis() + 100;
+          } else {
+            ESP_LOGW(TAG, "Reconciling write failed for ch=%u", (unsigned) ch);
+          }
+        } else {
+          // Achieved desired mode; clear desire
+          this->desired_mode_.erase(it_des);
+        }
+      }
     }
     if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
       st.setpoint_c = this->raw_to_c(regs[0]);
@@ -96,8 +128,9 @@ void WavinAHC9000::update() {
         case 1: {
           if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
             uint16_t mode_bits = regs[0] & PACKED_CONFIGURATION_MODE_MASK;
-            st.mode = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
-            ESP_LOGD(TAG, "CH%u mode=%s", ch_num, st.mode == climate::CLIMATE_MODE_OFF ? "OFF" : "HEAT");
+            bool is_off = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) || (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY_ALT);
+            st.mode = is_off ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+            ESP_LOGD(TAG, "CH%u mode=%s", ch_num, is_off ? "OFF" : "HEAT");
           } else {
             ESP_LOGW(TAG, "CH%u: mode read failed", ch_num);
           }
@@ -269,7 +302,7 @@ bool WavinAHC9000::write_register(uint8_t category, uint8_t page, uint8_t index,
   return false;
 }
 
-bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t index, uint16_t value, uint16_t mask) {
+bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t index, uint16_t and_mask, uint16_t or_mask) {
   uint8_t msg[12];
   msg[0] = DEVICE_ADDR;
   msg[1] = FC_WRITE_MASKED;
@@ -277,16 +310,16 @@ bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t
   msg[3] = index;
   msg[4] = page;
   msg[5] = 1;  // count
-  msg[6] = (uint8_t) (value >> 8);
-  msg[7] = (uint8_t) (value & 0xFF);
-  msg[8] = (uint8_t) (mask >> 8);
-  msg[9] = (uint8_t) (mask & 0xFF);
+  msg[6] = (uint8_t) (and_mask >> 8);
+  msg[7] = (uint8_t) (and_mask & 0xFF);
+  msg[8] = (uint8_t) (or_mask >> 8);
+  msg[9] = (uint8_t) (or_mask & 0xFF);
   uint16_t crc = crc16(msg, 10);
   msg[10] = (uint8_t) (crc & 0xFF);
   msg[11] = (uint8_t) (crc >> 8);
 
   if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
-  ESP_LOGD(TAG, "TX-WM: cat=%u idx=%u page=%u val=0x%04X mask=0x%04X", category, index, page, (unsigned) value, (unsigned) mask);
+  ESP_LOGD(TAG, "TX-WM: cat=%u idx=%u page=%u and=0x%04X or=0x%04X", category, index, page, (unsigned) and_mask, (unsigned) or_mask);
   this->write_array(msg, 12);
   this->flush();
   delayMicroseconds(250);
@@ -336,22 +369,27 @@ void WavinAHC9000::write_group_setpoint(const std::vector<uint8_t> &members, flo
 void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode) {
   if (channel < 1 || channel > 16) return;
   uint8_t page = (uint8_t) (channel - 1);
-  uint16_t value_bits = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
   this->desired_mode_[channel] = mode;
-  bool ok = this->write_masked_register(CAT_PACKED, page, PACKED_CONFIGURATION, value_bits, PACKED_CONFIGURATION_MODE_MASK);
+  // For masked write semantics: (reg & and_mask) | or_mask
+  // We want to change only MODE bits (mask=PACKED_CONFIGURATION_MODE_MASK)
+  uint16_t and_mask = (uint16_t) (~PACKED_CONFIGURATION_MODE_MASK);
+  uint16_t or_mask = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY_ALT : PACKED_CONFIGURATION_MODE_MANUAL;
+  bool ok = this->write_masked_register(CAT_PACKED, page, PACKED_CONFIGURATION, and_mask, (uint16_t) (or_mask & PACKED_CONFIGURATION_MODE_MASK));
   if (!ok) {
     // Fallback: read-modify-write full register
     std::vector<uint16_t> regs;
     if (this->read_registers(CAT_PACKED, page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
       uint16_t current = regs[0];
-      uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (value_bits & PACKED_CONFIGURATION_MODE_MASK));
+      // Prefer ALT standby bits for OFF; otherwise use MANUAL
+      uint16_t new_bits = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY_ALT : PACKED_CONFIGURATION_MODE_MANUAL;
+      uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (new_bits & PACKED_CONFIGURATION_MODE_MASK));
       ESP_LOGW(TAG, "WM fallback: PACKED_CONFIGURATION ch=%u cur=0x%04X next=0x%04X", (unsigned) channel, (unsigned) current, (unsigned) next);
       ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, next);
       if (!ok && mode == climate::CLIMATE_MODE_OFF) {
-        // Try alternate standby bit pattern observed on some variants
-        uint16_t alt_bits = PACKED_CONFIGURATION_MODE_STANDBY_ALT;
-        next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (alt_bits & PACKED_CONFIGURATION_MODE_MASK));
-        ESP_LOGW(TAG, "OFF alt-bit try: PACKED_CONFIGURATION ch=%u next=0x%04X", (unsigned) channel, (unsigned) next);
+        // Try standard standby bit pattern as second attempt
+        uint16_t std_bits = PACKED_CONFIGURATION_MODE_STANDBY;
+        next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (std_bits & PACKED_CONFIGURATION_MODE_MASK));
+        ESP_LOGW(TAG, "OFF std-bit try: PACKED_CONFIGURATION ch=%u next=0x%04X", (unsigned) channel, (unsigned) next);
         ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, next);
       }
     } else {
