@@ -373,23 +373,23 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
   // For masked write semantics: (reg & and_mask) | or_mask
   // We want to change only MODE bits (mask=PACKED_CONFIGURATION_MODE_MASK)
   uint16_t and_mask = (uint16_t) (~PACKED_CONFIGURATION_MODE_MASK);
-  uint16_t or_mask = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY_ALT : PACKED_CONFIGURATION_MODE_MANUAL;
+  uint16_t or_mask = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
   bool ok = this->write_masked_register(CAT_PACKED, page, PACKED_CONFIGURATION, and_mask, (uint16_t) (or_mask & PACKED_CONFIGURATION_MODE_MASK));
   if (!ok) {
     // Fallback: read-modify-write full register
     std::vector<uint16_t> regs;
     if (this->read_registers(CAT_PACKED, page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
       uint16_t current = regs[0];
-      // Prefer ALT standby bits for OFF; otherwise use MANUAL
-      uint16_t new_bits = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY_ALT : PACKED_CONFIGURATION_MODE_MANUAL;
+      // Prefer standard standby bits for OFF; otherwise use MANUAL
+      uint16_t new_bits = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
       uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (new_bits & PACKED_CONFIGURATION_MODE_MASK));
       ESP_LOGW(TAG, "WM fallback: PACKED_CONFIGURATION ch=%u cur=0x%04X next=0x%04X", (unsigned) channel, (unsigned) current, (unsigned) next);
       ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, next);
       if (!ok && mode == climate::CLIMATE_MODE_OFF) {
-        // Try standard standby bit pattern as second attempt
-        uint16_t std_bits = PACKED_CONFIGURATION_MODE_STANDBY;
-        next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (std_bits & PACKED_CONFIGURATION_MODE_MASK));
-        ESP_LOGW(TAG, "OFF std-bit try: PACKED_CONFIGURATION ch=%u next=0x%04X", (unsigned) channel, (unsigned) next);
+        // Try alternate standby bit pattern as second attempt
+        uint16_t alt_bits = PACKED_CONFIGURATION_MODE_STANDBY_ALT;
+        next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (alt_bits & PACKED_CONFIGURATION_MODE_MASK));
+        ESP_LOGW(TAG, "OFF alt-bit try: PACKED_CONFIGURATION ch=%u next=0x%04X", (unsigned) channel, (unsigned) next);
         ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, next);
       }
     } else {
