@@ -409,13 +409,17 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
   if (channel < 1 || channel > 16) return;
   uint8_t page = (uint8_t) (channel - 1);
   this->desired_mode_[channel] = mode;
-  // For masked write semantics: (reg & and_mask) | or_mask
-  // We want to change only MODE bits (mask=PACKED_CONFIGURATION_MODE_MASK)
-  uint16_t and_mask = (uint16_t) (~PACKED_CONFIGURATION_MODE_MASK);
-  uint16_t or_mask = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
-  bool ok = this->write_masked_register(CAT_PACKED, page, PACKED_CONFIGURATION, and_mask, (uint16_t) (or_mask & PACKED_CONFIGURATION_MODE_MASK));
+  // Prefer strict writes to baseline values to avoid reintroducing lock/program flags
+  uint16_t strict_val = (uint16_t) (0x4000 | (mode == climate::CLIMATE_MODE_OFF ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL));
+  bool ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, strict_val);
   if (!ok) {
-    // Fallback: read-modify-write full register
+    // Fallback 1: masked write of mode bits only
+    uint16_t and_mask = (uint16_t) (~PACKED_CONFIGURATION_MODE_MASK);
+    uint16_t or_mask = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
+    ok = this->write_masked_register(CAT_PACKED, page, PACKED_CONFIGURATION, and_mask, (uint16_t) (or_mask & PACKED_CONFIGURATION_MODE_MASK));
+  }
+  if (!ok) {
+    // Fallback 2: read-modify-write full register
     std::vector<uint16_t> regs;
     if (this->read_registers(CAT_PACKED, page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
       uint16_t current = regs[0];
