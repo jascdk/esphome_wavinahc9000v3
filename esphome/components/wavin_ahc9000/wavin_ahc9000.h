@@ -43,6 +43,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void request_status();
   void request_status_channel(uint8_t ch_index);
   void repair_channel_flags(uint8_t channel);
+  void repair_channel_flags_ext(uint8_t channel);
 
   // Data access
   float get_channel_current_temp(uint8_t channel) const;
@@ -120,6 +121,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_STANDBY = 0x01;
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_STANDBY_ALT = 0x04; // fallback for variant firmwares
   static constexpr uint16_t PACKED_CONFIGURATION_PROGRAM_BIT = 0x0008; // suspected schedule/program flag
+  static constexpr uint16_t PACKED_CONFIGURATION_PROGRAM_MASK = 0x0018; // extended clear: bits 3 and 4
 };
 
 // Inline helpers for configuring sensors
@@ -159,16 +161,22 @@ class WavinRepairButton : public button::Button, public Component {
  public:
   void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
   void set_channel(uint8_t ch) { this->channel_ = ch; }
+  void set_extended(bool v) { this->extended_ = v; }
   void dump_config() override;
 
  protected:
   void press_action() override {
     if (this->parent_ != nullptr && this->channel_ >= 1 && this->channel_ <= 16) {
-      this->parent_->repair_channel_flags(this->channel_);
+      if (this->extended_) {
+        this->parent_->repair_channel_flags_ext(this->channel_);
+      } else {
+        this->parent_->repair_channel_flags(this->channel_);
+      }
     }
   }
   WavinAHC9000 *parent_{nullptr};
   uint8_t channel_{0};
+  bool extended_{false};
 };
 
 }  // namespace wavin_ahc9000
