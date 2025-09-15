@@ -13,6 +13,7 @@ namespace wavin_ahc9000 {
 
 // Forward
 class WavinZoneClimate;
+namespace sensor { class Sensor; }
 
 class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
  public:
