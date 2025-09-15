@@ -26,62 +26,77 @@ void WavinAHC9000::setup() { ESP_LOGCONFIG(TAG, "Wavin AHC9000 hub setup"); }
 void WavinAHC9000::loop() {}
 
 void WavinAHC9000::update() {
-  // Minimal staged read for channel 1 (page 0)
+  // Staged read for channel 1 (page 0), one step per update to avoid blocking
   uint8_t ch_page = 0;       // 0-based page
-  uint8_t ch_num = 1;        // 1-based channel id for maps/getters
+  uint8_t ch_num = 1;        // 1-based channel id
   auto &st = this->channels_[ch_num];
 
   std::vector<uint16_t> regs;
+  uint8_t &step = this->channel_step_[0];
 
-  // 1) Primary element + lost flag
-  if (this->read_registers(CAT_CHANNELS, ch_page, CH_PRIMARY_ELEMENT, 1, regs) && regs.size() >= 1) {
-    uint16_t v = regs[0];
-    st.primary_index = v & CH_PRIMARY_ELEMENT_ELEMENT_MASK;  // 1..N
-    st.all_tp_lost = (v & CH_PRIMARY_ELEMENT_ALL_TP_LOST_MASK) != 0;
-    ESP_LOGV(TAG, "CH%u primary elem=%u lost=%s", ch_num, (unsigned) st.primary_index, st.all_tp_lost ? "Y" : "N");
-  } else {
-    ESP_LOGW(TAG, "CH%u: primary element read failed", ch_num);
-  }
-
-  // 2) Mode/config
-  if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
-    uint16_t mode_bits = regs[0] & PACKED_CONFIGURATION_MODE_MASK;
-    st.mode = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
-    ESP_LOGV(TAG, "CH%u mode=%s", ch_num, st.mode == climate::CLIMATE_MODE_OFF ? "OFF" : "HEAT");
-  } else {
-    ESP_LOGW(TAG, "CH%u: mode read failed", ch_num);
-  }
-
-  // 3) Manual setpoint
-  if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
-    st.setpoint_c = this->raw_to_c(regs[0]);
-    ESP_LOGV(TAG, "CH%u setpoint=%.1fC", ch_num, st.setpoint_c);
-  } else {
-    ESP_LOGW(TAG, "CH%u: setpoint read failed", ch_num);
-  }
-
-  // 4) Output action
-  if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
-    bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
-    st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
-    ESP_LOGV(TAG, "CH%u action=%s", ch_num, heating ? "HEATING" : "IDLE");
-  } else {
-    ESP_LOGW(TAG, "CH%u: action read failed", ch_num);
-  }
-
-  // 5) Current temperature via primary element page (index 0x04)
-  if (!st.all_tp_lost && st.primary_index > 0) {
-    uint8_t elem_page = (uint8_t) (st.primary_index - 1);
-    if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
-      st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
-      ESP_LOGV(TAG, "CH%u current=%.1fC", ch_num, st.current_temp_c);
-    } else {
-      ESP_LOGW(TAG, "CH%u: element temp read failed", ch_num);
+  switch (step) {
+    case 0: {
+      if (this->read_registers(CAT_CHANNELS, ch_page, CH_PRIMARY_ELEMENT, 1, regs) && regs.size() >= 1) {
+        uint16_t v = regs[0];
+        st.primary_index = v & CH_PRIMARY_ELEMENT_ELEMENT_MASK;
+        st.all_tp_lost = (v & CH_PRIMARY_ELEMENT_ALL_TP_LOST_MASK) != 0;
+        ESP_LOGD(TAG, "CH%u primary elem=%u lost=%s", ch_num, (unsigned) st.primary_index, st.all_tp_lost ? "Y" : "N");
+      } else {
+        ESP_LOGW(TAG, "CH%u: primary element read failed", ch_num);
+      }
+      step = 1;
+      break;
     }
-  } else {
-    st.current_temp_c = NAN;
+    case 1: {
+      if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
+        uint16_t mode_bits = regs[0] & PACKED_CONFIGURATION_MODE_MASK;
+        st.mode = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+        ESP_LOGD(TAG, "CH%u mode=%s", ch_num, st.mode == climate::CLIMATE_MODE_OFF ? "OFF" : "HEAT");
+      } else {
+        ESP_LOGW(TAG, "CH%u: mode read failed", ch_num);
+      }
+      step = 2;
+      break;
+    }
+    case 2: {
+      if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+        st.setpoint_c = this->raw_to_c(regs[0]);
+        ESP_LOGD(TAG, "CH%u setpoint=%.1fC", ch_num, st.setpoint_c);
+      } else {
+        ESP_LOGW(TAG, "CH%u: setpoint read failed", ch_num);
+      }
+      step = 3;
+      break;
+    }
+    case 3: {
+      if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
+        bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
+        st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
+        ESP_LOGD(TAG, "CH%u action=%s", ch_num, heating ? "HEATING" : "IDLE");
+      } else {
+        ESP_LOGW(TAG, "CH%u: action read failed", ch_num);
+      }
+      step = 4;
+      break;
+    }
+    case 4: {
+      if (!st.all_tp_lost && st.primary_index > 0) {
+        uint8_t elem_page = (uint8_t) (st.primary_index - 1);
+        if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
+          st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
+          ESP_LOGD(TAG, "CH%u current=%.1fC", ch_num, st.current_temp_c);
+        } else {
+          ESP_LOGW(TAG, "CH%u: element temp read failed", ch_num);
+        }
+      } else {
+        st.current_temp_c = NAN;
+      }
+      step = 0;
+      break;
+    }
   }
 
+  // One-step publish so HA sees incremental updates
   this->publish_updates();
 }
 
@@ -103,7 +118,7 @@ bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index,
   msg[7] = crc >> 8;
 
   if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
-  ESP_LOGV(TAG, "TX: addr=0x%02X fc=0x%02X cat=%u idx=%u page=%u cnt=%u", msg[0], msg[1], category, index, page, count);
+  ESP_LOGD(TAG, "TX: addr=0x%02X fc=0x%02X cat=%u idx=%u page=%u cnt=%u", msg[0], msg[1], category, index, page, count);
   this->write_array(msg, 8);
   this->flush();
   delayMicroseconds(250);
