@@ -64,6 +64,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::string get_yaml_climate_chunk(uint8_t start, uint8_t count) const;
   std::string get_yaml_battery_chunk(uint8_t start, uint8_t count) const;
   std::string get_yaml_temperature_chunk(uint8_t start, uint8_t count) const;
+  std::string get_yaml_floor_temperature_chunk(uint8_t start, uint8_t count) const;
   uint8_t get_yaml_active_count() const { return (uint8_t) this->yaml_active_channels_.size(); }
 
   // Data access
@@ -112,6 +113,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::string yaml_last_temperature_{};
   std::string yaml_last_floor_temperature_{};
   std::vector<uint8_t> yaml_active_channels_{}; // active channels discovered during last YAML generation
+  std::vector<uint8_t> yaml_floor_channels_{}; // subset with detected floor sensors during last YAML generation
   std::vector<uint8_t> active_channels_;
   std::map<uint8_t, climate::ClimateMode> desired_mode_; // desired mode to reconcile after refresh
   std::set<uint8_t> strict_mode_channels_; // channels opting into strict baseline writes

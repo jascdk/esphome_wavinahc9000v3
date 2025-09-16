@@ -540,6 +540,15 @@ void WavinAHC9000::generate_yaml_suggestion() {
     out += "\n" + yaml_floor_temp;
   }
 
+  // Build cached floor channel list for chunk helper usage
+  this->yaml_floor_channels_.clear();
+  if (any_floor) {
+    for (auto ch : active) {
+      auto it = this->channels_.find(ch);
+      if (it != this->channels_.end() && it->second.has_floor_sensor) this->yaml_floor_channels_.push_back(ch);
+    }
+  }
+
   // Save last YAML and publish to optional text sensor (HA may truncate state >255 chars)
   this->yaml_last_suggestion_ = out;
   this->yaml_last_climate_ = yaml_climate;
@@ -618,6 +627,18 @@ static std::string build_temperature_yaml_for(const std::vector<uint8_t> &chs) {
   }
   return y;
 }
+static std::string build_floor_temperature_yaml_for(const std::vector<uint8_t> &chs) {
+  std::string y;
+  if (chs.empty()) return y;
+  for (auto ch : chs) {
+    y += "- platform: wavin_ahc9000\n";
+    y += "  wavin_ahc9000_id: wavin\n";
+    y += "  name: \"Zone " + std::to_string((int) ch) + " Floor Temperature\"\n";
+    y += "  channel: " + std::to_string((int) ch) + "\n";
+    y += "  type: floor_temperature\n";
+  }
+  return y;
+}
 
 std::string WavinAHC9000::get_yaml_climate_chunk(uint8_t start, uint8_t count) const {
   if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
@@ -636,6 +657,12 @@ std::string WavinAHC9000::get_yaml_temperature_chunk(uint8_t start, uint8_t coun
   uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
   std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
   return build_temperature_yaml_for(chs);
+}
+std::string WavinAHC9000::get_yaml_floor_temperature_chunk(uint8_t start, uint8_t count) const {
+  if (start >= this->yaml_floor_channels_.size() || count == 0) return std::string("");
+  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_floor_channels_.size(), (size_t) start + count);
+  std::vector<uint8_t> chs(this->yaml_floor_channels_.begin() + start, this->yaml_floor_channels_.begin() + end);
+  return build_floor_temperature_yaml_for(chs);
 }
 
 void WavinAHC9000::publish_updates() {

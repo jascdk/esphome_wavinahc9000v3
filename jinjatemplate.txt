@@ -3,6 +3,7 @@ Home Assistant Jinja templates to stitch chunked YAML sensors into complete sect
 Prerequisites
 - Call the ESPHome service esphome.wavin_publish_yaml_text_sensors to populate the chunk sensors.
 - Ensure sensors like sensor.wavin_yaml_climate_1..8, sensor.wavin_yaml_battery_1..8, sensor.wavin_yaml_temperature_1..8 have non-empty states.
+- (Optional) If you have floor probes: sensor.wavin_yaml_floor_temperature_1..8 will be present only after a valid floor reading was detected.
 - Each chunk sensor outputs only entity blocks (no climate:/sensor: header). The Jinja adds headers and indentation.
 
 All-in-one (climate + sensor)
@@ -23,6 +24,12 @@ All-in-one (climate + sensor)
   | selectattr('state','ne','unknown')
   | selectattr('state','ne','unavailable')
   | sort(attribute='entity_id') | list %}
+{% set floor_temps = states.sensor
+  | selectattr('entity_id','search','_yaml_floor_temperature_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | selectattr('state','ne','')
+  | sort(attribute='entity_id') | list %}
 
 climate:
 {% for s in climates %}
@@ -36,6 +43,12 @@ sensor:
 {% for s in temps %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
+{% if floor_temps | length > 0 %}
+  # Floor temperature sensors (only if probes detected)
+{% for s in floor_temps %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% endif %}
 {% endraw %}
 
 Climate-only
@@ -52,7 +65,7 @@ climate:
 {% endfor %}
 {% endraw %}
 
-Sensors-only (battery + temperature)
+Sensors-only (battery + temperature + optional floor)
 {% raw %}
 {% set batteries = states.sensor
   | selectattr('entity_id','search','_yaml_battery_')
@@ -64,6 +77,12 @@ Sensors-only (battery + temperature)
   | selectattr('state','ne','unknown')
   | selectattr('state','ne','unavailable')
   | sort(attribute='entity_id') | list %}
+{% set floor_temps = states.sensor
+  | selectattr('entity_id','search','_yaml_floor_temperature_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | selectattr('state','ne','')
+  | sort(attribute='entity_id') | list %}
 
 sensor:
 {% for s in batteries %}
@@ -72,4 +91,10 @@ sensor:
 {% for s in temps %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
+{% if floor_temps | length > 0 %}
+  # Floor temperature sensors
+{% for s in floor_temps %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% endif %}
 {% endraw %}
