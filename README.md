@@ -153,3 +153,33 @@ Quick steps:
 - Open `jinjatemplate.txt`, copy the “All-in-one” Jinja, and paste it into a Jinja-capable place (template editor, script/automation message, or notification). It adds `climate:` and `sensor:` headers and correct indentation.
 
 Note: The single `text_sensor` named "Wavin YAML Suggestion" still publishes the full YAML (with headers) for simple copy/paste, but large setups may be truncated in HA. The chunked approach avoids this by splitting into smaller pieces.
+
+### Comfort Setpoint Read-Only Sensor
+
+If you do not want writable number entities but still want to surface the current comfort (manual) setpoint as a sensor for dashboards or historical graphs, you can add a `comfort_setpoint` sensor type:
+
+```yaml
+sensor:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    channel: 3
+    type: comfort_setpoint
+    name: "Zone 3 Comfort Setpoint"
+```
+
+This sensor publishes the latest manual/comfort setpoint (register 0x00) that the integration already reads for the climate entity. It is read-only; changing it requires using the climate entity or a number entity if enabled in another branch.
+
+### Floor Temperature Sensor
+
+If your thermostat provides a floor probe value, you can expose it separately:
+
+```yaml
+sensor:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    channel: 3
+    type: floor_temperature
+    name: "Zone 3 Floor Temperature"
+```
+
+This reads element index 0x05 (same scaling as air). A plausibility filter (-20..90°C) is applied; invalid or missing values result in the sensor staying unavailable.

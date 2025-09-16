@@ -82,6 +82,11 @@ void WavinAHC9000::update() {
       uint8_t elem_page = (uint8_t) (st.primary_index - 1);
       if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
         st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
+        if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
+          float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
+          // Basic plausibility filter (-20..90C)
+          if (ft > -20 && ft < 90) st.floor_temp_c = ft; else st.floor_temp_c = NAN;
+        }
       }
     }
     urgent_processed++;
@@ -156,11 +161,20 @@ void WavinAHC9000::update() {
             uint8_t elem_page = (uint8_t) (st.primary_index - 1);
             if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
               st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
+              if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
+                float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
+                if (ft > -20 && ft < 90) st.floor_temp_c = ft; else st.floor_temp_c = NAN;
+              }
               ESP_LOGD(TAG, "CH%u current=%.1fC", ch_num, st.current_temp_c);
               // Publish to per-channel temperature sensor if configured
               auto it_t = this->temperature_sensors_.find(ch_num);
               if (it_t != this->temperature_sensors_.end() && it_t->second != nullptr && !std::isnan(st.current_temp_c)) {
                 it_t->second->publish_state(st.current_temp_c);
+              }
+              // Floor sensor publish (on staged read) if configured
+              auto it_ft = this->floor_temperature_sensors_.find(ch_num);
+              if (it_ft != this->floor_temperature_sensors_.end() && it_ft->second != nullptr && !std::isnan(st.floor_temp_c)) {
+                it_ft->second->publish_state(st.floor_temp_c);
               }
               // Battery status if available (0..10 scale)
               if (regs.size() > ELEM_BATTERY_STATUS) {
@@ -597,6 +611,40 @@ void WavinAHC9000::publish_updates() {
            (unsigned) this->single_ch_climates_.size(), (unsigned) this->group_climates_.size());
   for (auto *c : this->single_ch_climates_) c->update_from_parent();
   for (auto *c : this->group_climates_) c->update_from_parent();
+  // Channel sensors
+  for (auto &kv : this->temperature_sensors_) {
+    uint8_t ch = kv.first;
+    auto *s = kv.second;
+    if (!s) continue;
+    float v = this->get_channel_current_temp(ch);
+    if (!std::isnan(v)) s->publish_state(v);
+  }
+  for (auto &kv : this->battery_sensors_) {
+    uint8_t ch = kv.first;
+    auto *s = kv.second;
+    if (!s) continue;
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end() && it->second.battery_pct != 255) {
+      s->publish_state((float) it->second.battery_pct);
+    }
+  }
+  for (auto &kv : this->comfort_setpoint_sensors_) {
+    uint8_t ch = kv.first;
+    auto *s = kv.second;
+    if (!s) continue;
+    float v = this->get_channel_setpoint(ch);
+    if (!std::isnan(v)) s->publish_state(v);
+  }
+  for (auto &kv : this->floor_temperature_sensors_) {
+    uint8_t ch = kv.first;
+    auto *s = kv.second;
+    if (!s) continue;
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end()) {
+      float v = it->second.floor_temp_c;
+      if (!std::isnan(v)) s->publish_state(v);
+    }
+  }
 }
 
 float WavinAHC9000::get_channel_current_temp(uint8_t channel) const {

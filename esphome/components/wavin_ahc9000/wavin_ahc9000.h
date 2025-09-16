@@ -37,6 +37,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void add_group_climate(WavinZoneClimate *c);
   void add_channel_battery_sensor(uint8_t ch, sensor::Sensor *s);
   void add_channel_temperature_sensor(uint8_t ch, sensor::Sensor *s);
+  void add_channel_comfort_setpoint_sensor(uint8_t ch, sensor::Sensor *s);
   void add_active_channel(uint8_t ch);
 
   // Send commands
@@ -85,6 +86,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   // Simple cache per channel
   struct ChannelState {
     float current_temp_c{NAN};
+    float floor_temp_c{NAN};
     float setpoint_c{NAN};
     climate::ClimateMode mode{climate::CLIMATE_MODE_HEAT};
     climate::ClimateAction action{climate::CLIMATE_ACTION_OFF};
@@ -98,6 +100,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::vector<WavinZoneClimate *> group_climates_;
   std::map<uint8_t, sensor::Sensor *> battery_sensors_;
   std::map<uint8_t, sensor::Sensor *> temperature_sensors_;
+  std::map<uint8_t, sensor::Sensor *> floor_temperature_sensors_;
+  std::map<uint8_t, sensor::Sensor *> comfort_setpoint_sensors_;
   text_sensor::TextSensor *yaml_text_sensor_{nullptr};
   std::string yaml_last_suggestion_{};
   std::string yaml_last_climate_{};
@@ -137,6 +141,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   static constexpr uint16_t CH_PRIMARY_ELEMENT_ALL_TP_LOST_MASK = 0x0400;
 
   static constexpr uint8_t ELEM_AIR_TEMPERATURE = 0x04; // index within block
+  static constexpr uint8_t ELEM_FLOOR_TEMPERATURE = 0x05; // index for floor probe
   static constexpr uint8_t ELEM_BATTERY_STATUS = 0x0A;  // not used yet
 
   static constexpr uint8_t PACKED_MANUAL_TEMPERATURE = 0x00;
@@ -158,6 +163,14 @@ inline void WavinAHC9000::add_channel_battery_sensor(uint8_t ch, sensor::Sensor 
 
 inline void WavinAHC9000::add_channel_temperature_sensor(uint8_t ch, sensor::Sensor *s) {
   this->temperature_sensors_[ch] = s;
+}
+
+inline void WavinAHC9000::add_channel_comfort_setpoint_sensor(uint8_t ch, sensor::Sensor *s) {
+  this->comfort_setpoint_sensors_[ch] = s;
+}
+
+inline void WavinAHC9000::add_channel_floor_temperature_sensor(uint8_t ch, sensor::Sensor *s) {
+  this->floor_temperature_sensors_[ch] = s;
 }
 
 class WavinZoneClimate : public climate::Climate, public Component {
