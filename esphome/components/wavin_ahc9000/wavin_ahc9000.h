@@ -60,11 +60,15 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::string get_yaml_climate() const { return this->yaml_last_climate_; }
   std::string get_yaml_battery() const { return this->yaml_last_battery_; }
   std::string get_yaml_temperature() const { return this->yaml_last_temperature_; }
+  std::string get_yaml_numbers_comfort() const { return this->yaml_last_numbers_comfort_; }
+  std::string get_yaml_numbers_standby() const { return this->yaml_last_numbers_standby_; }
   // Chunk helpers: return YAML entity blocks (complete entities only, NO section header)
   // start is 0-based entity index among discovered active channels; count is number of entities to include
   std::string get_yaml_climate_chunk(uint8_t start, uint8_t count) const;
   std::string get_yaml_battery_chunk(uint8_t start, uint8_t count) const;
   std::string get_yaml_temperature_chunk(uint8_t start, uint8_t count) const;
+  std::string get_yaml_numbers_comfort_chunk(uint8_t start, uint8_t count) const;
+  std::string get_yaml_numbers_standby_chunk(uint8_t start, uint8_t count) const;
   uint8_t get_yaml_active_count() const { return (uint8_t) this->yaml_active_channels_.size(); }
 
   // Data access
@@ -112,6 +116,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::string yaml_last_climate_{};
   std::string yaml_last_battery_{};
   std::string yaml_last_temperature_{};
+  std::string yaml_last_numbers_comfort_{};
+  std::string yaml_last_numbers_standby_{};
   std::vector<uint8_t> yaml_active_channels_{}; // active channels discovered during last YAML generation
   std::vector<uint8_t> active_channels_;
   std::map<uint8_t, climate::ClimateMode> desired_mode_; // desired mode to reconcile after refresh

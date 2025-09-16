@@ -153,3 +153,27 @@ Quick steps:
 - Open `jinjatemplate.txt`, copy the “All-in-one” Jinja, and paste it into a Jinja-capable place (template editor, script/automation message, or notification). It adds `climate:` and `sensor:` headers and correct indentation.
 
 Note: The single `text_sensor` named "Wavin YAML Suggestion" still publishes the full YAML (with headers) for simple copy/paste, but large setups may be truncated in HA. The chunked approach avoids this by splitting into smaller pieces.
+
+## Comfort vs Standby Setpoints (optional number entities)
+
+The controller maintains two setpoints per channel:
+- Comfort (manual) setpoint (register 0x00)
+- Standby (eco) setpoint (register 0x04)
+
+On the feature branch `comfort-eco-numbers`, both can be exposed as writable `number` entities without changing the climate mode mapping (still OFF/HEAT). Example:
+
+```yaml
+number:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    channel: 1
+    type: comfort
+    name: "Zone 1 Comfort Setpoint"
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    channel: 1
+    type: standby
+    name: "Zone 1 Standby Setpoint"
+```
+
+Changing the comfort number writes the manual setpoint; changing the standby number writes the standby (eco) register. Automations can adjust standby values globally (e.g. night setback) while leaving the comfort values untouched.

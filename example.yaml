@@ -76,6 +76,19 @@ sensor:
     channel: 1
     type: temperature
 
+# Optional: comfort & standby (eco) setpoint number entities per channel (new)
+# number:
+#   - platform: wavin_ahc9000
+#     wavin_ahc9000_id: wavin
+#     channel: 1
+#     type: comfort
+#     name: "Zone 1 Comfort Setpoint"
+#   - platform: wavin_ahc9000
+#     wavin_ahc9000_id: wavin
+#     channel: 1
+#     type: standby
+#     name: "Zone 1 Standby Setpoint"
+
 # NOTE: The text_sensor/api helpers below are also provided by the optional package
 # at packages/wavin_yaml_tools.yaml. If you enable the package, you can remove
 # the following text_sensor/api sections.

@@ -515,13 +515,30 @@ void WavinAHC9000::generate_yaml_suggestion() {
     yaml_temp += "    type: temperature\n";
   }
 
-  std::string out = yaml_climate + "\n" + yaml_batt + "\n" + yaml_temp;
+  std::string yaml_numbers;
+  yaml_numbers += "number:\n";
+  for (auto ch : active) {
+    yaml_numbers += "  - platform: wavin_ahc9000\n";
+    yaml_numbers += "    wavin_ahc9000_id: wavin\n";
+    yaml_numbers += "    name: \"Zone " + std::to_string((int) ch) + " Comfort Setpoint\"\n";
+    yaml_numbers += "    channel: " + std::to_string((int) ch) + "\n";
+    yaml_numbers += "    type: comfort\n";
+    yaml_numbers += "  - platform: wavin_ahc9000\n";
+    yaml_numbers += "    wavin_ahc9000_id: wavin\n";
+    yaml_numbers += "    name: \"Zone " + std::to_string((int) ch) + " Standby Setpoint\"\n";
+    yaml_numbers += "    channel: " + std::to_string((int) ch) + "\n";
+    yaml_numbers += "    type: standby\n";
+  }
+
+  std::string out = yaml_climate + "\n" + yaml_batt + "\n" + yaml_temp + "\n" + yaml_numbers;
 
   // Save last YAML and publish to optional text sensor (HA may truncate state >255 chars)
   this->yaml_last_suggestion_ = out;
   this->yaml_last_climate_ = yaml_climate;
   this->yaml_last_battery_ = yaml_batt;
   this->yaml_last_temperature_ = yaml_temp;
+  this->yaml_last_numbers_comfort_.clear(); // not stored separately entity-block only; keep full numbers section in suggestion
+  this->yaml_last_numbers_standby_.clear();
   if (this->yaml_text_sensor_ != nullptr) {
     this->yaml_text_sensor_->publish_state(out);
   }
@@ -594,6 +611,30 @@ static std::string build_temperature_yaml_for(const std::vector<uint8_t> &chs) {
   }
   return y;
 }
+static std::string build_numbers_comfort_yaml_for(const std::vector<uint8_t> &chs) {
+  std::string y;
+  if (chs.empty()) return y;
+  for (auto ch : chs) {
+    y += "- platform: wavin_ahc9000\n";
+    y += "  wavin_ahc9000_id: wavin\n";
+    y += "  name: \"Zone " + std::to_string((int) ch) + " Comfort Setpoint\"\n";
+    y += "  channel: " + std::to_string((int) ch) + "\n";
+    y += "  type: comfort\n";
+  }
+  return y;
+}
+static std::string build_numbers_standby_yaml_for(const std::vector<uint8_t> &chs) {
+  std::string y;
+  if (chs.empty()) return y;
+  for (auto ch : chs) {
+    y += "- platform: wavin_ahc9000\n";
+    y += "  wavin_ahc9000_id: wavin\n";
+    y += "  name: \"Zone " + std::to_string((int) ch) + " Standby Setpoint\"\n";
+    y += "  channel: " + std::to_string((int) ch) + "\n";
+    y += "  type: standby\n";
+  }
+  return y;
+}
 
 std::string WavinAHC9000::get_yaml_climate_chunk(uint8_t start, uint8_t count) const {
   if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
@@ -612,6 +653,18 @@ std::string WavinAHC9000::get_yaml_temperature_chunk(uint8_t start, uint8_t coun
   uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
   std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
   return build_temperature_yaml_for(chs);
+}
+std::string WavinAHC9000::get_yaml_numbers_comfort_chunk(uint8_t start, uint8_t count) const {
+  if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
+  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
+  std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
+  return build_numbers_comfort_yaml_for(chs);
+}
+std::string WavinAHC9000::get_yaml_numbers_standby_chunk(uint8_t start, uint8_t count) const {
+  if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
+  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
+  std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
+  return build_numbers_standby_yaml_for(chs);
 }
 
 void WavinAHC9000::publish_updates() {
