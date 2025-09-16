@@ -152,6 +152,8 @@ Quick steps:
 - In Home Assistant Developer Tools → States, verify sensors like `sensor.wavin_yaml_climate_1..8`, `sensor.wavin_yaml_battery_1..8`, `sensor.wavin_yaml_temperature_1..8` have content.
 - Open `jinjatemplate.txt`, copy the “All-in-one” Jinja, and paste it into a Jinja-capable place (template editor, script/automation message, or notification). It adds `climate:` and `sensor:` headers and correct indentation.
 
+Comfort/standby number blocks: The generator now only includes comfort/standby setpoint number entities for channels that appear to have an attached thermostat (identified by a valid primary element index and no TP-lost flag at discovery time). This avoids suggesting number entities for channels without a temperature probe or thermostat. If you later add a thermostat, re-run the YAML publish service to refresh the suggestion.
+
 Note: The single `text_sensor` named "Wavin YAML Suggestion" still publishes the full YAML (with headers) for simple copy/paste, but large setups may be truncated in HA. The chunked approach avoids this by splitting into smaller pieces.
 
 ## Comfort vs Standby Setpoints (optional number entities)
@@ -177,3 +179,5 @@ number:
 ```
 
 Changing the comfort number writes the manual setpoint; changing the standby number writes the standby (eco) register. Automations can adjust standby values globally (e.g. night setback) while leaving the comfort values untouched.
+
+Discovery heuristic: A channel is considered "comfort-capable" if, during discovery, its primary element register returns a non-zero element index and the ALL_TP_LOST bit is clear. This is the same predicate used for climates; therefore currently all discovered climate channels will usually get comfort/standby numbers suggested. Future firmware distinctions (e.g. specific element types) can refine this without changing user YAML.

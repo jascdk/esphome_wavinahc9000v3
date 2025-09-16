@@ -56,6 +56,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void normalize_channel_config(uint8_t channel, bool off);
   void generate_yaml_suggestion();
   void set_yaml_text_sensor(text_sensor::TextSensor *s) { this->yaml_text_sensor_ = s; }
+  // Runtime discovery helper: channels that appear to have an attached thermostat (primary element present & not lost)
+  std::vector<uint8_t> get_comfort_capable_channels() const;
   // Accessor for last generated YAML (for HA notifications via lambda)
   std::string get_yaml_suggestion() const { return this->yaml_last_suggestion_; }
   std::string get_yaml_climate() const { return this->yaml_last_climate_; }

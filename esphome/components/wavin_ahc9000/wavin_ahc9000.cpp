@@ -517,7 +517,9 @@ void WavinAHC9000::generate_yaml_suggestion() {
 
   std::string yaml_numbers;
   yaml_numbers += "number:\n";
-  for (auto ch : active) {
+  // Use comfort-capable subset; currently same as active but may diverge in future
+  auto comfort_capable = this->get_comfort_capable_channels();
+  for (auto ch : comfort_capable) {
     yaml_numbers += "  - platform: wavin_ahc9000\n";
     yaml_numbers += "    wavin_ahc9000_id: wavin\n";
     yaml_numbers += "    name: \"Zone " + std::to_string((int) ch) + " Comfort Setpoint\"\n";
@@ -570,6 +572,13 @@ void WavinAHC9000::generate_yaml_suggestion() {
     }
   }
   ESP_LOGI(TAG, "%s===================== Wavin YAML SUGGESTION END =====================%s", CYAN, RESET);
+}
+
+std::vector<uint8_t> WavinAHC9000::get_comfort_capable_channels() const {
+  // Current heuristic: channel previously discovered as active (primary_index>0 && !all_tp_lost)
+  // which is tracked in yaml_active_channels_. If future differentiation needed (e.g., specific
+  // element capability bits), adapt here without touching callers.
+  return this->yaml_active_channels_;
 }
 
 // --- YAML chunk helpers (whole-entity, not byte size) ---
