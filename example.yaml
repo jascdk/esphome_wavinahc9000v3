@@ -37,6 +37,12 @@ wavin_ahc9000:
   # update_interval: 2s
   allow_mode_writes: false
 
+# Onboarding helpers (optional): include the chunked YAML tools package
+# This adds text sensors and services to generate/publish YAML chunks for HA Jinja stitching.
+# Enable during setup, then remove to keep your config clean.
+# packages:
+#   wavin_yaml_tools: !include packages/wavin_yaml_tools.yaml
+
 climate:
   - platform: wavin_ahc9000
     wavin_ahc9000_id: wavin
@@ -58,6 +64,10 @@ sensor:
     name: "Zone 1 Temperature"
     channel: 1
     type: temperature
+
+# NOTE: The text_sensor/api helpers below are also provided by the optional package
+# at packages/wavin_yaml_tools.yaml. If you enable the package, you can remove
+# the following text_sensor/api sections.
 
 text_sensor:
   - platform: wavin_ahc9000
