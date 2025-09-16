@@ -430,25 +430,47 @@ void WavinAHC9000::normalize_channel_config(uint8_t channel, bool off) {
 }
 
 void WavinAHC9000::generate_yaml_suggestion() {
-  // Build a minimal YAML snippet reflecting configured climates and sensors
+  // One-shot discovery sweep: detect active channels immediately (independent of background polling)
+  std::vector<uint8_t> active;
+  active.reserve(16);
+  std::vector<uint16_t> regs;
+  for (uint8_t ch = 1; ch <= 16; ch++) {
+    uint8_t page = (uint8_t) (ch - 1);
+    if (this->read_registers(CAT_CHANNELS, page, CH_PRIMARY_ELEMENT, 1, regs) && regs.size() >= 1) {
+      uint16_t v = regs[0];
+      uint16_t primary_index = v & CH_PRIMARY_ELEMENT_ELEMENT_MASK;
+      bool all_tp_lost = (v & CH_PRIMARY_ELEMENT_ALL_TP_LOST_MASK) != 0;
+      if (primary_index > 0 && !all_tp_lost) {
+        active.push_back(ch);
+        // Opportunistically fill cache (does not change behavior)
+        auto &st = this->channels_[ch];
+        st.primary_index = primary_index;
+        st.all_tp_lost = all_tp_lost;
+        // Read basic mode + setpoint so climates look sensible in cache
+        if (this->read_registers(CAT_PACKED, page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
+          uint16_t raw_cfg = regs[0];
+          uint16_t mode_bits = raw_cfg & PACKED_CONFIGURATION_MODE_MASK;
+          bool is_off = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) || (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY_ALT);
+          st.mode = is_off ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+        }
+        if (this->read_registers(CAT_PACKED, page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+          st.setpoint_c = this->raw_to_c(regs[0]);
+        }
+      }
+    }
+  }
+
+  // Build YAML suggestion for discovered channels
   std::string out;
   out += "climate:\n";
-  for (auto *c : this->single_ch_climates_) {
-    // Try to infer channel from climate
-    // Note: WavinZoneClimate exposes single_channel_ privately; we mirror state via map
-    // We’ll iterate channels_ to find which channels are active and include a default name.
-  }
-  // Fallback: generate climates for channels that reported any data
-  for (const auto &kv : this->channels_) {
-    uint8_t ch = kv.first;
+  for (auto ch : active) {
     out += "  - platform: wavin_ahc9000\n";
     out += "    wavin_ahc9000_id: wavin\n";
     out += "    name: \"Zone " + std::to_string((int) ch) + "\"\n";
     out += "    channel: " + std::to_string((int) ch) + "\n";
   }
   out += "\nsensor:\n";
-  for (const auto &kv : this->channels_) {
-    uint8_t ch = kv.first;
+  for (auto ch : active) {
     out += "  - platform: wavin_ahc9000\n";
     out += "    wavin_ahc9000_id: wavin\n";
     out += "    name: \"Zone " + std::to_string((int) ch) + " Battery\"\n";
@@ -460,12 +482,19 @@ void WavinAHC9000::generate_yaml_suggestion() {
     out += "    channel: " + std::to_string((int) ch) + "\n";
     out += "    type: temperature\n";
   }
+
+  // Publish to optional text sensor (HA may truncate state >255 chars)
   if (this->yaml_text_sensor_ != nullptr) {
     this->yaml_text_sensor_->publish_state(out);
-    ESP_LOGI(TAG, "YAML suggestion published (%u bytes)", (unsigned) out.size());
-  } else {
-    ESP_LOGI(TAG, "YAML suggestion (no text_sensor configured):\n%s", out.c_str());
   }
+
+  // Also print with banners (and ANSI color if viewer supports it)
+  const char *CYAN = "\x1b[36m";
+  const char *GREEN = "\x1b[32m";
+  const char *RESET = "\x1b[0m";
+  ESP_LOGI(TAG, "%s==================== Wavin YAML SUGGESTION BEGIN ====================%s", CYAN, RESET);
+  ESP_LOGI(TAG, "%s%s%s", GREEN, out.c_str(), RESET);
+  ESP_LOGI(TAG, "%s===================== Wavin YAML SUGGESTION END =====================%s", CYAN, RESET);
 }
 
 void WavinAHC9000::publish_updates() {
