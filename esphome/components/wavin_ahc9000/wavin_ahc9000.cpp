@@ -141,6 +141,17 @@ void WavinAHC9000::update() {
           break;
         }
         case 3: {
+          // Read standby (eco) setpoint
+          if (this->read_registers(CAT_PACKED, ch_page, PACKED_STANDBY_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+            st.standby_setpoint_c = this->raw_to_c(regs[0]);
+            ESP_LOGD(TAG, "CH%u standby=%.1fC", ch_num, st.standby_setpoint_c);
+          } else {
+            ESP_LOGV(TAG, "CH%u: standby setpoint read failed", ch_num);
+          }
+          step = 4;
+          break;
+        }
+        case 4: {
           if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
             bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
             st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
@@ -148,10 +159,10 @@ void WavinAHC9000::update() {
           } else {
             ESP_LOGW(TAG, "CH%u: action read failed", ch_num);
           }
-          step = 4;
+          step = 5;
           break;
         }
-        case 4: {
+        case 5: {
           if (!st.all_tp_lost && st.primary_index > 0) {
             uint8_t elem_page = (uint8_t) (st.primary_index - 1);
             if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
@@ -364,6 +375,17 @@ void WavinAHC9000::write_channel_setpoint(uint8_t channel, float celsius) {
 
 void WavinAHC9000::write_group_setpoint(const std::vector<uint8_t> &members, float celsius) {
   for (auto ch : members) this->write_channel_setpoint(ch, celsius);
+}
+
+void WavinAHC9000::write_channel_standby_setpoint(uint8_t channel, float celsius) {
+  if (channel < 1 || channel > 16) return;
+  uint8_t page = (uint8_t) (channel - 1);
+  uint16_t raw = this->c_to_raw(celsius);
+  if (this->write_register(CAT_PACKED, page, PACKED_STANDBY_TEMPERATURE, raw)) {
+    this->channels_[channel].standby_setpoint_c = celsius;
+    this->urgent_channels_.push_back(channel);
+    this->suspend_polling_until_ = millis() + 100;
+  }
 }
 
 void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode) {
@@ -597,6 +619,17 @@ void WavinAHC9000::publish_updates() {
            (unsigned) this->single_ch_climates_.size(), (unsigned) this->group_climates_.size());
   for (auto *c : this->single_ch_climates_) c->update_from_parent();
   for (auto *c : this->group_climates_) c->update_from_parent();
+  // Publish number entities (comfort setpoints)
+  for (auto *n : this->comfort_numbers_) {
+    if (!n) continue;
+    float v = this->get_channel_setpoint(n->get_channel());
+    if (!std::isnan(v)) n->publish_state(v);
+  }
+  for (auto *n : this->standby_numbers_) {
+    if (!n) continue;
+    float v = this->get_channel_standby_setpoint(n->get_channel());
+    if (!std::isnan(v)) n->publish_state(v);
+  }
 }
 
 float WavinAHC9000::get_channel_current_temp(uint8_t channel) const {
@@ -606,6 +639,10 @@ float WavinAHC9000::get_channel_current_temp(uint8_t channel) const {
 float WavinAHC9000::get_channel_setpoint(uint8_t channel) const {
   auto it = this->channels_.find(channel);
   return it == this->channels_.end() ? NAN : it->second.setpoint_c;
+}
+float WavinAHC9000::get_channel_standby_setpoint(uint8_t channel) const {
+  auto it = this->channels_.find(channel);
+  return it == this->channels_.end() ? NAN : it->second.standby_setpoint_c;
 }
 climate::ClimateMode WavinAHC9000::get_channel_mode(uint8_t channel) const {
   auto it = this->channels_.find(channel);

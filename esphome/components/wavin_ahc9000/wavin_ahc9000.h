@@ -3,6 +3,7 @@
 #include "esphome/components/climate/climate.h"
 #include "esphome/components/uart/uart.h"
 #include "esphome/components/text_sensor/text_sensor.h"
+#include "esphome/components/number/number.h"
 #include "esphome/core/component.h"
 
 #include <vector>
@@ -18,6 +19,7 @@ namespace wavin_ahc9000 {
 
 // Forward
 class WavinZoneClimate;
+class WavinSetpointNumber;
 
 class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
  public:
@@ -37,6 +39,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void add_group_climate(WavinZoneClimate *c);
   void add_channel_battery_sensor(uint8_t ch, sensor::Sensor *s);
   void add_channel_temperature_sensor(uint8_t ch, sensor::Sensor *s);
+  void add_comfort_number(WavinSetpointNumber *n) { this->comfort_numbers_.push_back(n); }
+  void add_standby_number(WavinSetpointNumber *n) { this->standby_numbers_.push_back(n); }
   void add_active_channel(uint8_t ch);
 
   // Send commands
@@ -86,16 +90,21 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   struct ChannelState {
     float current_temp_c{NAN};
     float setpoint_c{NAN};
+  float standby_setpoint_c{NAN};
     climate::ClimateMode mode{climate::CLIMATE_MODE_HEAT};
     climate::ClimateAction action{climate::CLIMATE_ACTION_OFF};
     uint8_t battery_pct{255}; // 0..100; 255=unknown
   uint16_t primary_index{0};
   bool all_tp_lost{false};
   };
+  void write_channel_standby_setpoint(uint8_t channel, float celsius);
+  float get_channel_standby_setpoint(uint8_t channel) const;
 
   std::map<uint8_t, ChannelState> channels_;
   std::vector<WavinZoneClimate *> single_ch_climates_;
   std::vector<WavinZoneClimate *> group_climates_;
+  std::vector<WavinSetpointNumber *> comfort_numbers_;
+  std::vector<WavinSetpointNumber *> standby_numbers_;
   std::map<uint8_t, sensor::Sensor *> battery_sensors_;
   std::map<uint8_t, sensor::Sensor *> temperature_sensors_;
   text_sensor::TextSensor *yaml_text_sensor_{nullptr};
@@ -186,6 +195,31 @@ class WavinZoneClimate : public climate::Climate, public Component {
   uint8_t single_channel_{0};
   bool single_channel_set_{false};
   std::vector<uint8_t> members_{};
+};
+
+// Number entity for comfort or standby (eco) setpoints
+class WavinSetpointNumber : public number::Number, public Component {
+ public:
+  uint8_t get_channel() const { return this->channel_; }
+  Type get_type() const { return this->type_; }
+  enum Type { COMFORT, STANDBY };
+  void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
+  void set_channel(uint8_t ch) { this->channel_ = ch; }
+  void set_type(Type t) { this->type_ = t; }
+  void dump_config() override {}
+ protected:
+  void control(float value) override {
+    if (!this->parent_) return;
+    if (this->type_ == COMFORT) {
+      this->parent_->write_channel_setpoint(this->channel_, value);
+    } else {
+      this->parent_->write_channel_standby_setpoint(this->channel_, value);
+    }
+    this->publish_state(value);
+  }
+  WavinAHC9000 *parent_{nullptr};
+  uint8_t channel_{0};
+  Type type_{COMFORT};
 };
 
 // Repair button removed; use API service to normalize
