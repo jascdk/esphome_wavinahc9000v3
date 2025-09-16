@@ -142,3 +142,14 @@ wavin_ahc9000:
 
 ## Disclaimer
 This is an independent, community-driven integration. Use at your own risk.
+
+## YAML generator and HA Jinja stitching
+
+This component can generate suggested YAML for discovered channels. Because Home Assistant limits text sensor sizes, the suggestion is also exposed as chunked text sensors (each containing only entity blocks, without section headers). Use the included `jinjatemplate.txt` to stitch them back together in Home Assistant.
+
+Quick steps:
+- In ESPHome, call the service `esphome.wavin_publish_yaml_text_sensors` to populate chunk sensors.
+- In Home Assistant Developer Tools → States, verify sensors like `sensor.wavin_yaml_climate_1..8`, `sensor.wavin_yaml_battery_1..8`, `sensor.wavin_yaml_temperature_1..8` have content.
+- Open `jinjatemplate.txt`, copy the “All-in-one” Jinja, and paste it into a Jinja-capable place (template editor, script/automation message, or notification). It adds `climate:` and `sensor:` headers and correct indentation.
+
+Note: The single `text_sensor` named "Wavin YAML Suggestion" still publishes the full YAML (with headers) for simple copy/paste, but large setups may be truncated in HA. The chunked approach avoids this by splitting into smaller pieces.
