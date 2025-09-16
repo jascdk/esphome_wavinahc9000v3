@@ -30,7 +30,11 @@ uart:
 wavin_ahc9000:
   id: wavin
   uart_id: uart_wavin
+  # Regular polling interval; optionally lower temporarily for quicker discovery
   update_interval: 5s
+  # Optional: speed up initial discovery (uncomment briefly)
+  # poll_channels_per_cycle: 8
+  # update_interval: 2s
   allow_mode_writes: false
 
 climate:
@@ -73,6 +77,25 @@ api:
       then:
         - lambda: |-
             id(wavin).generate_yaml_suggestion();
+    # Optional: push the full YAML to a Home Assistant persistent notification
+    - service: wavin_notify_yaml
+      then:
+        - homeassistant.service:
+            service: persistent_notification.create
+            data:
+              title: Wavin YAML Suggestion
+              message: !lambda |-
+                return id(wavin).get_yaml_suggestion().c_str();
+
+    # Optional: write YAML into an input_text (create input_text.wavin_yaml in HA first)
+    # - service: wavin_write_yaml_to_input_text
+    #   then:
+    #     - homeassistant.service:
+    #         service: input_text.set_value
+    #         data:
+    #           entity_id: input_text.wavin_yaml
+    #           value: !lambda |-
+    #             return id(wavin).get_yaml_suggestion().c_str();
 
 wifi:
   ssid: "<your-ssid>"

@@ -483,7 +483,8 @@ void WavinAHC9000::generate_yaml_suggestion() {
     out += "    type: temperature\n";
   }
 
-  // Publish to optional text sensor (HA may truncate state >255 chars)
+  // Save last YAML and publish to optional text sensor (HA may truncate state >255 chars)
+  this->yaml_last_suggestion_ = out;
   if (this->yaml_text_sensor_ != nullptr) {
     this->yaml_text_sensor_->publish_state(out);
   }
@@ -493,7 +494,26 @@ void WavinAHC9000::generate_yaml_suggestion() {
   const char *GREEN = "\x1b[32m";
   const char *RESET = "\x1b[0m";
   ESP_LOGI(TAG, "%s==================== Wavin YAML SUGGESTION BEGIN ====================%s", CYAN, RESET);
-  ESP_LOGI(TAG, "%s%s%s", GREEN, out.c_str(), RESET);
+  {
+    // Print line by line to avoid single-message truncation in logger
+    const char *p = out.c_str();
+    const char *line_start = p;
+    while (*p) {
+      if (*p == '\n') {
+        std::string line(line_start, p - line_start);
+        ESP_LOGI(TAG, "%s%s%s", GREEN, line.c_str(), RESET);
+        ++p;
+        line_start = p;
+      } else {
+        ++p;
+      }
+    }
+    // Last line if not newline-terminated
+    if (line_start != p) {
+      std::string line(line_start, p - line_start);
+      ESP_LOGI(TAG, "%s%s%s", GREEN, line.c_str(), RESET);
+    }
+  }
   ESP_LOGI(TAG, "%s===================== Wavin YAML SUGGESTION END =====================%s", CYAN, RESET);
 }
 

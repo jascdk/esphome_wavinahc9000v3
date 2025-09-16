@@ -9,6 +9,7 @@
 #include <map>
 #include <set>
 #include <cmath>
+#include <string>
 
 namespace esphome {
 namespace sensor { class Sensor; }
@@ -50,6 +51,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void normalize_channel_config(uint8_t channel, bool off);
   void generate_yaml_suggestion();
   void set_yaml_text_sensor(text_sensor::TextSensor *s) { this->yaml_text_sensor_ = s; }
+  // Accessor for last generated YAML (for HA notifications via lambda)
+  std::string get_yaml_suggestion() const { return this->yaml_last_suggestion_; }
 
   // Data access
   float get_channel_current_temp(uint8_t channel) const;
@@ -87,6 +90,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::map<uint8_t, sensor::Sensor *> battery_sensors_;
   std::map<uint8_t, sensor::Sensor *> temperature_sensors_;
   text_sensor::TextSensor *yaml_text_sensor_{nullptr};
+  std::string yaml_last_suggestion_{};
   std::vector<uint8_t> active_channels_;
   std::map<uint8_t, climate::ClimateMode> desired_mode_; // desired mode to reconcile after refresh
   std::set<uint8_t> strict_mode_channels_; // channels opting into strict baseline writes
