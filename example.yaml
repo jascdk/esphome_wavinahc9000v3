@@ -55,6 +55,11 @@ sensor:
     channel: 1
     type: temperature
 
+text_sensor:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Wavin YAML Suggestion"
+
 api:
   services:
     - service: wavin_strict_heat
@@ -64,6 +69,10 @@ api:
         - lambda: |-
             // Force baseline 0x4000 on the selected channel
             id(wavin).normalize_channel_config(channel, false);
+    - service: wavin_generate_yaml
+      then:
+        - lambda: |-
+            id(wavin).generate_yaml_suggestion();
 
 wifi:
   ssid: "<your-ssid>"

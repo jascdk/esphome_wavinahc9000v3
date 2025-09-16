@@ -429,6 +429,45 @@ void WavinAHC9000::normalize_channel_config(uint8_t channel, bool off) {
   }
 }
 
+void WavinAHC9000::generate_yaml_suggestion() {
+  // Build a minimal YAML snippet reflecting configured climates and sensors
+  std::string out;
+  out += "climate:\n";
+  for (auto *c : this->single_ch_climates_) {
+    // Try to infer channel from climate
+    // Note: WavinZoneClimate exposes single_channel_ privately; we mirror state via map
+    // We’ll iterate channels_ to find which channels are active and include a default name.
+  }
+  // Fallback: generate climates for channels that reported any data
+  for (const auto &kv : this->channels_) {
+    uint8_t ch = kv.first;
+    out += "  - platform: wavin_ahc9000\n";
+    out += "    wavin_ahc9000_id: wavin\n";
+    out += "    name: \"Zone " + std::to_string((int) ch) + "\"\n";
+    out += "    channel: " + std::to_string((int) ch) + "\n";
+  }
+  out += "\nsensor:\n";
+  for (const auto &kv : this->channels_) {
+    uint8_t ch = kv.first;
+    out += "  - platform: wavin_ahc9000\n";
+    out += "    wavin_ahc9000_id: wavin\n";
+    out += "    name: \"Zone " + std::to_string((int) ch) + " Battery\"\n";
+    out += "    channel: " + std::to_string((int) ch) + "\n";
+    out += "    type: battery\n";
+    out += "  - platform: wavin_ahc9000\n";
+    out += "    wavin_ahc9000_id: wavin\n";
+    out += "    name: \"Zone " + std::to_string((int) ch) + " Temperature\"\n";
+    out += "    channel: " + std::to_string((int) ch) + "\n";
+    out += "    type: temperature\n";
+  }
+  if (this->yaml_text_sensor_ != nullptr) {
+    this->yaml_text_sensor_->publish_state(out);
+    ESP_LOGI(TAG, "YAML suggestion published (%u bytes)", (unsigned) out.size());
+  } else {
+    ESP_LOGI(TAG, "YAML suggestion (no text_sensor configured):\n%s", out.c_str());
+  }
+}
+
 void WavinAHC9000::publish_updates() {
   ESP_LOGV(TAG, "Publishing updates: %u single climates, %u group climates",
            (unsigned) this->single_ch_climates_.size(), (unsigned) this->group_climates_.size());

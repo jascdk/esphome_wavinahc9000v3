@@ -2,6 +2,7 @@
 
 #include "esphome/components/climate/climate.h"
 #include "esphome/components/uart/uart.h"
+#include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/core/component.h"
 
 #include <vector>
@@ -11,6 +12,7 @@
 
 namespace esphome {
 namespace sensor { class Sensor; }
+namespace text_sensor { class TextSensor; }
 namespace wavin_ahc9000 {
 
 // Forward
@@ -46,6 +48,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void request_status();
   void request_status_channel(uint8_t ch_index);
   void normalize_channel_config(uint8_t channel, bool off);
+  void generate_yaml_suggestion();
+  void set_yaml_text_sensor(text_sensor::TextSensor *s) { this->yaml_text_sensor_ = s; }
 
   // Data access
   float get_channel_current_temp(uint8_t channel) const;
@@ -82,6 +86,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::vector<WavinZoneClimate *> group_climates_;
   std::map<uint8_t, sensor::Sensor *> battery_sensors_;
   std::map<uint8_t, sensor::Sensor *> temperature_sensors_;
+  text_sensor::TextSensor *yaml_text_sensor_{nullptr};
   std::vector<uint8_t> active_channels_;
   std::map<uint8_t, climate::ClimateMode> desired_mode_; // desired mode to reconcile after refresh
   std::set<uint8_t> strict_mode_channels_; // channels opting into strict baseline writes
