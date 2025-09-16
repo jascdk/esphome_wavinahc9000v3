@@ -85,7 +85,12 @@ void WavinAHC9000::update() {
         if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
           float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
           // Basic plausibility filter (-20..90C)
-          if (ft > -20 && ft < 90) st.floor_temp_c = ft; else st.floor_temp_c = NAN;
+          if (ft > -20 && ft < 90) {
+            st.floor_temp_c = ft;
+            st.has_floor_sensor = true; // mark presence once a sane value observed
+          } else {
+            st.floor_temp_c = NAN;
+          }
         }
       }
     }
@@ -163,7 +168,12 @@ void WavinAHC9000::update() {
               st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
               if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
                 float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
-                if (ft > -20 && ft < 90) st.floor_temp_c = ft; else st.floor_temp_c = NAN;
+                if (ft > -20 && ft < 90) {
+                  st.floor_temp_c = ft;
+                  st.has_floor_sensor = true;
+                } else {
+                  st.floor_temp_c = NAN;
+                }
               }
               ESP_LOGD(TAG, "CH%u current=%.1fC", ch_num, st.current_temp_c);
               // Publish to per-channel temperature sensor if configured
@@ -507,13 +517,35 @@ void WavinAHC9000::generate_yaml_suggestion() {
     yaml_temp += "    type: temperature\n";
   }
 
+  // Floor temperature sensors: only include for channels where we have detected a floor probe
+  std::string yaml_floor_temp;
+  bool any_floor = false;
+  for (auto ch : active) {
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end() && it->second.has_floor_sensor) {
+      if (!any_floor) {
+        yaml_floor_temp += "sensor:\n"; // header
+        any_floor = true;
+      }
+      yaml_floor_temp += "  - platform: wavin_ahc9000\n";
+      yaml_floor_temp += "    wavin_ahc9000_id: wavin\n";
+      yaml_floor_temp += "    name: \"Zone " + std::to_string((int) ch) + " Floor Temperature\"\n";
+      yaml_floor_temp += "    channel: " + std::to_string((int) ch) + "\n";
+      yaml_floor_temp += "    type: floor_temperature\n";
+    }
+  }
+
   std::string out = yaml_climate + "\n" + yaml_batt + "\n" + yaml_temp;
+  if (any_floor) {
+    out += "\n" + yaml_floor_temp;
+  }
 
   // Save last YAML and publish to optional text sensor (HA may truncate state >255 chars)
   this->yaml_last_suggestion_ = out;
   this->yaml_last_climate_ = yaml_climate;
   this->yaml_last_battery_ = yaml_batt;
   this->yaml_last_temperature_ = yaml_temp;
+  this->yaml_last_floor_temperature_ = yaml_floor_temp;
   if (this->yaml_text_sensor_ != nullptr) {
     this->yaml_text_sensor_->publish_state(out);
   }
@@ -640,7 +672,7 @@ void WavinAHC9000::publish_updates() {
     auto *s = kv.second;
     if (!s) continue;
     auto it = this->channels_.find(ch);
-    if (it != this->channels_.end()) {
+    if (it != this->channels_.end() && it->second.has_floor_sensor) {
       float v = it->second.floor_temp_c;
       if (!std::isnan(v)) s->publish_state(v);
     }
