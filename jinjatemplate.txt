@@ -1,0 +1,29 @@
+{# Gather chunk sensors safely and indent entity blocks #}
+{% set climates = states.sensor
+  | selectattr('entity_id','search','_yaml_climate_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | sort(attribute='entity_id') | list %}
+{% set batteries = states.sensor
+  | selectattr('entity_id','search','_yaml_battery_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | sort(attribute='entity_id') | list %}
+{% set temps = states.sensor
+  | selectattr('entity_id','search','_yaml_temperature_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | sort(attribute='entity_id') | list %}
+
+climate:
+{% for s in climates %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+
+sensor:
+{% for s in batteries %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% for s in temps %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
