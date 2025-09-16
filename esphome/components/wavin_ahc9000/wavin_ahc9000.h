@@ -56,7 +56,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::string get_yaml_climate() const { return this->yaml_last_climate_; }
   std::string get_yaml_battery() const { return this->yaml_last_battery_; }
   std::string get_yaml_temperature() const { return this->yaml_last_temperature_; }
-  // Chunk helpers: return a YAML section containing complete entities only
+  // Chunk helpers: return YAML entity blocks (complete entities only, NO section header)
   // start is 0-based entity index among discovered active channels; count is number of entities to include
   std::string get_yaml_climate_chunk(uint8_t start, uint8_t count) const;
   std::string get_yaml_battery_chunk(uint8_t start, uint8_t count) const;

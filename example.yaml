@@ -63,6 +63,156 @@ text_sensor:
   - platform: wavin_ahc9000
     wavin_ahc9000_id: wavin
     name: "Wavin YAML Suggestion"
+  # Whole-entity YAML chunks for HA templating (2 entities per chunk)
+  # Climate chunks
+  - platform: template
+    id: yaml_climate_1
+    name: "Wavin YAML Climate 1"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_climate_chunk(0, 2);
+  - platform: template
+    id: yaml_climate_2
+    name: "Wavin YAML Climate 2"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_climate_chunk(2, 2);
+  - platform: template
+    id: yaml_climate_3
+    name: "Wavin YAML Climate 3"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_climate_chunk(4, 2);
+  - platform: template
+    id: yaml_climate_4
+    name: "Wavin YAML Climate 4"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_climate_chunk(6, 2);
+  - platform: template
+    id: yaml_climate_5
+    name: "Wavin YAML Climate 5"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_climate_chunk(8, 2);
+  - platform: template
+    id: yaml_climate_6
+    name: "Wavin YAML Climate 6"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_climate_chunk(10, 2);
+  - platform: template
+    id: yaml_climate_7
+    name: "Wavin YAML Climate 7"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_climate_chunk(12, 2);
+  - platform: template
+    id: yaml_climate_8
+    name: "Wavin YAML Climate 8"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_climate_chunk(14, 2);
+
+  # Battery chunks
+  - platform: template
+    id: yaml_battery_1
+    name: "Wavin YAML Battery 1"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_battery_chunk(0, 2);
+  - platform: template
+    id: yaml_battery_2
+    name: "Wavin YAML Battery 2"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_battery_chunk(2, 2);
+  - platform: template
+    id: yaml_battery_3
+    name: "Wavin YAML Battery 3"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_battery_chunk(4, 2);
+  - platform: template
+    id: yaml_battery_4
+    name: "Wavin YAML Battery 4"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_battery_chunk(6, 2);
+  - platform: template
+    id: yaml_battery_5
+    name: "Wavin YAML Battery 5"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_battery_chunk(8, 2);
+  - platform: template
+    id: yaml_battery_6
+    name: "Wavin YAML Battery 6"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_battery_chunk(10, 2);
+  - platform: template
+    id: yaml_battery_7
+    name: "Wavin YAML Battery 7"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_battery_chunk(12, 2);
+  - platform: template
+    id: yaml_battery_8
+    name: "Wavin YAML Battery 8"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_battery_chunk(14, 2);
+
+  # Temperature chunks
+  - platform: template
+    id: yaml_temperature_1
+    name: "Wavin YAML Temperature 1"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_temperature_chunk(0, 2);
+  - platform: template
+    id: yaml_temperature_2
+    name: "Wavin YAML Temperature 2"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_temperature_chunk(2, 2);
+  - platform: template
+    id: yaml_temperature_3
+    name: "Wavin YAML Temperature 3"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_temperature_chunk(4, 2);
+  - platform: template
+    id: yaml_temperature_4
+    name: "Wavin YAML Temperature 4"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_temperature_chunk(6, 2);
+  - platform: template
+    id: yaml_temperature_5
+    name: "Wavin YAML Temperature 5"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_temperature_chunk(8, 2);
+  - platform: template
+    id: yaml_temperature_6
+    name: "Wavin YAML Temperature 6"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_temperature_chunk(10, 2);
+  - platform: template
+    id: yaml_temperature_7
+    name: "Wavin YAML Temperature 7"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_temperature_chunk(12, 2);
+  - platform: template
+    id: yaml_temperature_8
+    name: "Wavin YAML Temperature 8"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_temperature_chunk(14, 2);
 
 api:
   services:
@@ -77,13 +227,41 @@ api:
       then:
         - lambda: |-
             id(wavin).generate_yaml_suggestion();
-    # One-button: send multiple notifications with whole-entity chunks (3 per notification)
+    - service: wavin_publish_yaml_text_sensors
+      then:
+        - lambda: |-
+            id(wavin).generate_yaml_suggestion();
+            id(yaml_climate_1).publish_state(id(wavin).get_yaml_climate_chunk(0, 2));
+            id(yaml_climate_2).publish_state(id(wavin).get_yaml_climate_chunk(2, 2));
+            id(yaml_climate_3).publish_state(id(wavin).get_yaml_climate_chunk(4, 2));
+            id(yaml_climate_4).publish_state(id(wavin).get_yaml_climate_chunk(6, 2));
+            id(yaml_climate_5).publish_state(id(wavin).get_yaml_climate_chunk(8, 2));
+            id(yaml_climate_6).publish_state(id(wavin).get_yaml_climate_chunk(10, 2));
+            id(yaml_climate_7).publish_state(id(wavin).get_yaml_climate_chunk(12, 2));
+            id(yaml_climate_8).publish_state(id(wavin).get_yaml_climate_chunk(14, 2));
+            id(yaml_battery_1).publish_state(id(wavin).get_yaml_battery_chunk(0, 2));
+            id(yaml_battery_2).publish_state(id(wavin).get_yaml_battery_chunk(2, 2));
+            id(yaml_battery_3).publish_state(id(wavin).get_yaml_battery_chunk(4, 2));
+            id(yaml_battery_4).publish_state(id(wavin).get_yaml_battery_chunk(6, 2));
+            id(yaml_battery_5).publish_state(id(wavin).get_yaml_battery_chunk(8, 2));
+            id(yaml_battery_6).publish_state(id(wavin).get_yaml_battery_chunk(10, 2));
+            id(yaml_battery_7).publish_state(id(wavin).get_yaml_battery_chunk(12, 2));
+            id(yaml_battery_8).publish_state(id(wavin).get_yaml_battery_chunk(14, 2));
+            id(yaml_temperature_1).publish_state(id(wavin).get_yaml_temperature_chunk(0, 2));
+            id(yaml_temperature_2).publish_state(id(wavin).get_yaml_temperature_chunk(2, 2));
+            id(yaml_temperature_3).publish_state(id(wavin).get_yaml_temperature_chunk(4, 2));
+            id(yaml_temperature_4).publish_state(id(wavin).get_yaml_temperature_chunk(6, 2));
+            id(yaml_temperature_5).publish_state(id(wavin).get_yaml_temperature_chunk(8, 2));
+            id(yaml_temperature_6).publish_state(id(wavin).get_yaml_temperature_chunk(10, 2));
+            id(yaml_temperature_7).publish_state(id(wavin).get_yaml_temperature_chunk(12, 2));
+            id(yaml_temperature_8).publish_state(id(wavin).get_yaml_temperature_chunk(14, 2));
+    # One-button: send multiple notifications with whole-entity chunks (2 per notification)
     - service: wavin_notify_yaml_chunks
       then:
         # Ensure latest suggestion
         - lambda: |-
             id(wavin).generate_yaml_suggestion();
-        # Climate chunks (3 per notification)
+        # Climate chunks (2 per notification)
         - if:
             condition:
               lambda: 'return id(wavin).get_yaml_active_count() > 0;'
@@ -92,16 +270,25 @@ api:
                   service: persistent_notification.create
                   data:
                     title: Wavin YAML (climate 1)
-                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(0, 3);'
+                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(0, 2);'
         - if:
             condition:
-              lambda: 'return id(wavin).get_yaml_active_count() > 3;'
+              lambda: 'return id(wavin).get_yaml_active_count() > 2;'
             then:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
                     title: Wavin YAML (climate 2)
-                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(3, 3);'
+                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(2, 2);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 4;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (climate 3)
+                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(4, 2);'
         - if:
             condition:
               lambda: 'return id(wavin).get_yaml_active_count() > 6;'
@@ -109,17 +296,26 @@ api:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
-                    title: Wavin YAML (climate 3)
-                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(6, 3);'
+                    title: Wavin YAML (climate 4)
+                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(6, 2);'
         - if:
             condition:
-              lambda: 'return id(wavin).get_yaml_active_count() > 9;'
+              lambda: 'return id(wavin).get_yaml_active_count() > 8;'
             then:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
-                    title: Wavin YAML (climate 4)
-                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(9, 3);'
+                    title: Wavin YAML (climate 5)
+                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(8, 2);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 10;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (climate 6)
+                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(10, 2);'
         - if:
             condition:
               lambda: 'return id(wavin).get_yaml_active_count() > 12;'
@@ -127,19 +323,19 @@ api:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
-                    title: Wavin YAML (climate 5)
-                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(12, 3);'
+                    title: Wavin YAML (climate 7)
+                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(12, 2);'
         - if:
             condition:
-              lambda: 'return id(wavin).get_yaml_active_count() > 15;'
+              lambda: 'return id(wavin).get_yaml_active_count() > 14;'
             then:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
-                    title: Wavin YAML (climate 6)
-                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(15, 3);'
+                    title: Wavin YAML (climate 8)
+                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(14, 2);'
 
-        # Battery sensor chunks (3 per notification)
+        # Battery sensor chunks (2 per notification)
         - if:
             condition:
               lambda: 'return id(wavin).get_yaml_active_count() > 0;'
@@ -148,16 +344,25 @@ api:
                   service: persistent_notification.create
                   data:
                     title: Wavin YAML (battery 1)
-                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(0, 3);'
+                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(0, 2);'
         - if:
             condition:
-              lambda: 'return id(wavin).get_yaml_active_count() > 3;'
+              lambda: 'return id(wavin).get_yaml_active_count() > 2;'
             then:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
                     title: Wavin YAML (battery 2)
-                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(3, 3);'
+                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(2, 2);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 4;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (battery 3)
+                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(4, 2);'
         - if:
             condition:
               lambda: 'return id(wavin).get_yaml_active_count() > 6;'
@@ -165,17 +370,26 @@ api:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
-                    title: Wavin YAML (battery 3)
-                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(6, 3);'
+                    title: Wavin YAML (battery 4)
+                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(6, 2);'
         - if:
             condition:
-              lambda: 'return id(wavin).get_yaml_active_count() > 9;'
+              lambda: 'return id(wavin).get_yaml_active_count() > 8;'
             then:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
-                    title: Wavin YAML (battery 4)
-                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(9, 3);'
+                    title: Wavin YAML (battery 5)
+                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(8, 2);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 10;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (battery 6)
+                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(10, 2);'
         - if:
             condition:
               lambda: 'return id(wavin).get_yaml_active_count() > 12;'
@@ -183,19 +397,19 @@ api:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
-                    title: Wavin YAML (battery 5)
-                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(12, 3);'
+                    title: Wavin YAML (battery 7)
+                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(12, 2);'
         - if:
             condition:
-              lambda: 'return id(wavin).get_yaml_active_count() > 15;'
+              lambda: 'return id(wavin).get_yaml_active_count() > 14;'
             then:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
-                    title: Wavin YAML (battery 6)
-                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(15, 3);'
+                    title: Wavin YAML (battery 8)
+                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(14, 2);'
 
-        # Temperature sensor chunks (3 per notification)
+        # Temperature sensor chunks (2 per notification)
         - if:
             condition:
               lambda: 'return id(wavin).get_yaml_active_count() > 0;'
@@ -204,16 +418,25 @@ api:
                   service: persistent_notification.create
                   data:
                     title: Wavin YAML (temperature 1)
-                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(0, 3);'
+                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(0, 2);'
         - if:
             condition:
-              lambda: 'return id(wavin).get_yaml_active_count() > 3;'
+              lambda: 'return id(wavin).get_yaml_active_count() > 2;'
             then:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
                     title: Wavin YAML (temperature 2)
-                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(3, 3);'
+                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(2, 2);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 4;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (temperature 3)
+                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(4, 2);'
         - if:
             condition:
               lambda: 'return id(wavin).get_yaml_active_count() > 6;'
@@ -221,17 +444,26 @@ api:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
-                    title: Wavin YAML (temperature 3)
-                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(6, 3);'
+                    title: Wavin YAML (temperature 4)
+                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(6, 2);'
         - if:
             condition:
-              lambda: 'return id(wavin).get_yaml_active_count() > 9;'
+              lambda: 'return id(wavin).get_yaml_active_count() > 8;'
             then:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
-                    title: Wavin YAML (temperature 4)
-                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(9, 3);'
+                    title: Wavin YAML (temperature 5)
+                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(8, 2);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 10;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (temperature 6)
+                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(10, 2);'
         - if:
             condition:
               lambda: 'return id(wavin).get_yaml_active_count() > 12;'
@@ -239,17 +471,17 @@ api:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
-                    title: Wavin YAML (temperature 5)
-                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(12, 3);'
+                    title: Wavin YAML (temperature 7)
+                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(12, 2);'
         - if:
             condition:
-              lambda: 'return id(wavin).get_yaml_active_count() > 15;'
+              lambda: 'return id(wavin).get_yaml_active_count() > 14;'
             then:
               - homeassistant.service:
                   service: persistent_notification.create
                   data:
-                    title: Wavin YAML (temperature 6)
-                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(15, 3);'
+                    title: Wavin YAML (temperature 8)
+                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(14, 2);'
   # (Legacy split services removed in favor of chunked whole-entity notifications)
 
     # Optional: write YAML into an input_text (create input_text.wavin_yaml in HA first)

@@ -535,40 +535,40 @@ void WavinAHC9000::generate_yaml_suggestion() {
 
 // --- YAML chunk helpers (whole-entity, not byte size) ---
 static std::string build_climate_yaml_for(const std::vector<uint8_t> &chs) {
+  // Return only entity blocks, no leading 'climate:' header
   std::string y;
   if (chs.empty()) return y;
-  y += "climate:\n";
   for (auto ch : chs) {
-    y += "  - platform: wavin_ahc9000\n";
-    y += "    wavin_ahc9000_id: wavin\n";
-    y += "    name: \"Zone " + std::to_string((int) ch) + "\"\n";
-    y += "    channel: " + std::to_string((int) ch) + "\n";
+    y += "- platform: wavin_ahc9000\n";
+    y += "  wavin_ahc9000_id: wavin\n";
+    y += "  name: \"Zone " + std::to_string((int) ch) + "\"\n";
+    y += "  channel: " + std::to_string((int) ch) + "\n";
   }
   return y;
 }
 static std::string build_battery_yaml_for(const std::vector<uint8_t> &chs) {
+  // Return only entity blocks, no leading 'sensor:' header
   std::string y;
   if (chs.empty()) return y;
-  y += "sensor:\n";
   for (auto ch : chs) {
-    y += "  - platform: wavin_ahc9000\n";
-    y += "    wavin_ahc9000_id: wavin\n";
-    y += "    name: \"Zone " + std::to_string((int) ch) + " Battery\"\n";
-    y += "    channel: " + std::to_string((int) ch) + "\n";
-    y += "    type: battery\n";
+    y += "- platform: wavin_ahc9000\n";
+    y += "  wavin_ahc9000_id: wavin\n";
+    y += "  name: \"Zone " + std::to_string((int) ch) + " Battery\"\n";
+    y += "  channel: " + std::to_string((int) ch) + "\n";
+    y += "  type: battery\n";
   }
   return y;
 }
 static std::string build_temperature_yaml_for(const std::vector<uint8_t> &chs) {
+  // Return only entity blocks, no leading 'sensor:' header
   std::string y;
   if (chs.empty()) return y;
-  y += "sensor:\n";
   for (auto ch : chs) {
-    y += "  - platform: wavin_ahc9000\n";
-    y += "    wavin_ahc9000_id: wavin\n";
-    y += "    name: \"Zone " + std::to_string((int) ch) + " Temperature\"\n";
-    y += "    channel: " + std::to_string((int) ch) + "\n";
-    y += "    type: temperature\n";
+    y += "- platform: wavin_ahc9000\n";
+    y += "  wavin_ahc9000_id: wavin\n";
+    y += "  name: \"Zone " + std::to_string((int) ch) + " Temperature\"\n";
+    y += "  channel: " + std::to_string((int) ch) + "\n";
+    y += "  type: temperature\n";
   }
   return y;
 }
