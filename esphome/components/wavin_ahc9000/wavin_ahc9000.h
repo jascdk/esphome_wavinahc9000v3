@@ -212,6 +212,8 @@ class WavinSetpointNumber : public number::Number, public Component {
   void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
   void set_channel(uint8_t ch) { this->channel_ = ch; }
   void set_type(Type t) { this->type_ = t; }
+  // Overload to support passing raw integer (workaround for codegen enum reference issue)
+  void set_type(uint8_t t) { this->type_ = static_cast<Type>(t); }
   void dump_config() override {}
  protected:
   void control(float value) override {

@@ -26,10 +26,16 @@ async def to_code(config):
     await number.register_number(var, config, min_value=5, max_value=35, step=0.5)
     cg.add(var.set_parent(hub))
     cg.add(var.set_channel(config[CONF_CHANNEL]))
+    # NOTE:
+    # Using the nested enum notation WavinSetpointNumber.Type.COMFORT caused the
+    # generated C++ code to use a dot operator (WavinSetpointNumber.Type.COMFORT),
+    # which is invalid C++. Until proper nested enum support is added to the
+    # code generator, we pass the underlying integer values explicitly:
+    #   0 => COMFORT, 1 => STANDBY (see enum Type { COMFORT, STANDBY }; in C++).
     if config[CONF_TYPE] == "comfort":
-        cg.add(var.set_type(WavinSetpointNumber.Type.COMFORT))
+        cg.add(var.set_type(0))  # Type::COMFORT
         cg.add(hub.add_comfort_number(var))
     else:
-        cg.add(var.set_type(WavinSetpointNumber.Type.STANDBY))
+        cg.add(var.set_type(1))  # Type::STANDBY
         cg.add(hub.add_standby_number(var))
     cg.add(hub.add_active_channel(config[CONF_CHANNEL]))
