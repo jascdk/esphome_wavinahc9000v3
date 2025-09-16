@@ -68,7 +68,7 @@ async def to_code(config):
     if config.get(CONF_TEMPERATURE_SENSORS, False) or config.get(CONF_BATTERY_SENSORS, False):
         for ch in channels:
             if config.get(CONF_TEMPERATURE_SENSORS, False):
-                s_cfg = {"name": f"{prefix}{ch} Temperature"}
+                s_cfg = {"name": f"{prefix}{ch} Temperature", CONF_ID: cg.new_id()}
                 s = await sensor.new_sensor(s_cfg)
                 # Temperature defaults
                 from esphome.const import DEVICE_CLASS_TEMPERATURE, UNIT_CELSIUS
@@ -78,7 +78,7 @@ async def to_code(config):
                 cg.add(var.add_channel_temperature_sensor(ch, s))
                 cg.add(var.add_active_channel(ch))
             if config.get(CONF_BATTERY_SENSORS, False):
-                b_cfg = {"name": f"{prefix}{ch} Battery"}
+                b_cfg = {"name": f"{prefix}{ch} Battery", CONF_ID: cg.new_id()}
                 b = await sensor.new_sensor(b_cfg)
                 # Battery defaults
                 from esphome.const import DEVICE_CLASS_BATTERY, UNIT_PERCENT
