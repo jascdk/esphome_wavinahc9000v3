@@ -10,41 +10,32 @@ CONF_CHANNEL = "channel"
 CONF_MEMBERS = "members"
 
 
-def _channels_list(value):
-    return cv.ensure_list(cv.int_range(min=1, max=16))(value)
+CONF_STRICT_MODE_WRITES = "strict_mode_writes"
 
-
-BASE_SCHEMA = climate.climate_schema(WavinZoneClimate).extend(
+CONFIG_SCHEMA = climate.climate_schema(WavinZoneClimate).extend(
     {
         cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000),
         cv.Optional(CONF_CHANNEL): cv.int_range(min=1, max=16),
-        cv.Optional(CONF_MEMBERS): _channels_list,
+        cv.Optional(CONF_MEMBERS): cv.ensure_list(cv.int_range(min=1, max=16)),
+    cv.Optional(CONF_STRICT_MODE_WRITES, default=False): cv.boolean,
     }
-).extend(cv.COMPONENT_SCHEMA)
-
-
-def _validate(cfg):
-    if (CONF_CHANNEL in cfg) == (CONF_MEMBERS in cfg):
-        raise cv.Invalid("Specify either 'channel' for a single zone or 'members' for a group, not both")
-    return cfg
-
-
-CONFIG_SCHEMA = cv.All(BASE_SCHEMA, _validate)
+)
 
 
 async def to_code(config):
     hub = await cg.get_variable(config[CONF_PARENT_ID])
-
     var = cg.new_Pvariable(config[CONF_ID])
     await climate.register_climate(var, config)
+    # Bind to hub
     cg.add(var.set_parent(hub))
-
-    # Single channel or group
     if CONF_CHANNEL in config:
         cg.add(var.set_single_channel(config[CONF_CHANNEL]))
+        cg.add(hub.add_active_channel(config[CONF_CHANNEL]))
+        if config[CONF_STRICT_MODE_WRITES]:
+            cg.add(hub.set_strict_mode_write(config[CONF_CHANNEL], True))
         cg.add(hub.add_channel_climate(var))
-    elif CONF_MEMBERS in config:
-        members = config.get(CONF_MEMBERS, [])
-        vec = cg.RawExpression("std::vector<int>{%s}" % ",".join(str(m) for m in members))
-        cg.add(var.set_members(vec))
+    if CONF_MEMBERS in config:
+        cg.add(var.set_members(config[CONF_MEMBERS]))
+        for ch in config[CONF_MEMBERS]:
+            cg.add(hub.add_active_channel(ch))
         cg.add(hub.add_group_climate(var))

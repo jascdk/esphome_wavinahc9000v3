@@ -1,0 +1,75 @@
+Home Assistant Jinja templates to stitch chunked YAML sensors into complete sections.
+
+Prerequisites
+- Call the ESPHome service esphome.wavin_publish_yaml_text_sensors to populate the chunk sensors.
+- Ensure sensors like sensor.wavin_yaml_climate_1..8, sensor.wavin_yaml_battery_1..8, sensor.wavin_yaml_temperature_1..8 have non-empty states.
+- Each chunk sensor outputs only entity blocks (no climate:/sensor: header). The Jinja adds headers and indentation.
+
+All-in-one (climate + sensor)
+{% raw %}
+{# Gather chunk sensors and indent entity blocks #}
+{% set climates = states.sensor
+  | selectattr('entity_id','search','_yaml_climate_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | sort(attribute='entity_id') | list %}
+{% set batteries = states.sensor
+  | selectattr('entity_id','search','_yaml_battery_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | sort(attribute='entity_id') | list %}
+{% set temps = states.sensor
+  | selectattr('entity_id','search','_yaml_temperature_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | sort(attribute='entity_id') | list %}
+
+climate:
+{% for s in climates %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+
+sensor:
+{% for s in batteries %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% for s in temps %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% endraw %}
+
+Climate-only
+{% raw %}
+{% set climates = states.sensor
+  | selectattr('entity_id','search','_yaml_climate_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | sort(attribute='entity_id') | list %}
+
+climate:
+{% for s in climates %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% endraw %}
+
+Sensors-only (battery + temperature)
+{% raw %}
+{% set batteries = states.sensor
+  | selectattr('entity_id','search','_yaml_battery_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | sort(attribute='entity_id') | list %}
+{% set temps = states.sensor
+  | selectattr('entity_id','search','_yaml_temperature_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | sort(attribute='entity_id') | list %}
+
+sensor:
+{% for s in batteries %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% for s in temps %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% endraw %}
