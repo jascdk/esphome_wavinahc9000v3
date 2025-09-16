@@ -47,6 +47,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void write_channel_setpoint(uint8_t channel, float celsius);
   void write_group_setpoint(const std::vector<uint8_t> &members, float celsius);
   void write_channel_mode(uint8_t channel, climate::ClimateMode mode);
+  void write_channel_standby_setpoint(uint8_t channel, float celsius);
   void refresh_channel_now(uint8_t channel);
   void set_strict_mode_write(uint8_t channel, bool enable);
   bool is_strict_mode_write(uint8_t channel) const;
@@ -101,7 +102,6 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   uint16_t primary_index{0};
   bool all_tp_lost{false};
   };
-  void write_channel_standby_setpoint(uint8_t channel, float celsius);
   float get_channel_standby_setpoint(uint8_t channel) const;
 
   std::map<uint8_t, ChannelState> channels_;
@@ -206,9 +206,9 @@ class WavinZoneClimate : public climate::Climate, public Component {
 // Number entity for comfort or standby (eco) setpoints
 class WavinSetpointNumber : public number::Number, public Component {
  public:
+  enum Type { COMFORT, STANDBY };
   uint8_t get_channel() const { return this->channel_; }
   Type get_type() const { return this->type_; }
-  enum Type { COMFORT, STANDBY };
   void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
   void set_channel(uint8_t ch) { this->channel_ = ch; }
   void set_type(Type t) { this->type_ = t; }
