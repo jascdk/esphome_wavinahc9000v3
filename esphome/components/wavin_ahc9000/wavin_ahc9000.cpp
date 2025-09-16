@@ -460,34 +460,47 @@ void WavinAHC9000::generate_yaml_suggestion() {
     }
   }
 
-  // Build YAML suggestion for discovered channels
-  std::string out;
-  out += "climate:\n";
+  // Build three YAML sections separately, then compose
+  std::string yaml_climate;
+  yaml_climate += "climate:\n";
   for (auto ch : active) {
-    out += "  - platform: wavin_ahc9000\n";
-    out += "    wavin_ahc9000_id: wavin\n";
-    out += "    name: \"Zone " + std::to_string((int) ch) + "\"\n";
-    out += "    channel: " + std::to_string((int) ch) + "\n";
+    yaml_climate += "  - platform: wavin_ahc9000\n";
+    yaml_climate += "    wavin_ahc9000_id: wavin\n";
+    yaml_climate += "    name: \"Zone " + std::to_string((int) ch) + "\"\n";
+    yaml_climate += "    channel: " + std::to_string((int) ch) + "\n";
   }
-  out += "\nsensor:\n";
+
+  std::string yaml_batt;
+  yaml_batt += "sensor:\n";
   for (auto ch : active) {
-    out += "  - platform: wavin_ahc9000\n";
-    out += "    wavin_ahc9000_id: wavin\n";
-    out += "    name: \"Zone " + std::to_string((int) ch) + " Battery\"\n";
-    out += "    channel: " + std::to_string((int) ch) + "\n";
-    out += "    type: battery\n";
-    out += "  - platform: wavin_ahc9000\n";
-    out += "    wavin_ahc9000_id: wavin\n";
-    out += "    name: \"Zone " + std::to_string((int) ch) + " Temperature\"\n";
-    out += "    channel: " + std::to_string((int) ch) + "\n";
-    out += "    type: temperature\n";
+    yaml_batt += "  - platform: wavin_ahc9000\n";
+    yaml_batt += "    wavin_ahc9000_id: wavin\n";
+    yaml_batt += "    name: \"Zone " + std::to_string((int) ch) + " Battery\"\n";
+    yaml_batt += "    channel: " + std::to_string((int) ch) + "\n";
+    yaml_batt += "    type: battery\n";
   }
+
+  std::string yaml_temp;
+  yaml_temp += "sensor:\n";
+  for (auto ch : active) {
+    yaml_temp += "  - platform: wavin_ahc9000\n";
+    yaml_temp += "    wavin_ahc9000_id: wavin\n";
+    yaml_temp += "    name: \"Zone " + std::to_string((int) ch) + " Temperature\"\n";
+    yaml_temp += "    channel: " + std::to_string((int) ch) + "\n";
+    yaml_temp += "    type: temperature\n";
+  }
+
+  std::string out = yaml_climate + "\n" + yaml_batt + "\n" + yaml_temp;
 
   // Save last YAML and publish to optional text sensor (HA may truncate state >255 chars)
   this->yaml_last_suggestion_ = out;
+  this->yaml_last_climate_ = yaml_climate;
+  this->yaml_last_battery_ = yaml_batt;
+  this->yaml_last_temperature_ = yaml_temp;
   if (this->yaml_text_sensor_ != nullptr) {
     this->yaml_text_sensor_->publish_state(out);
   }
+
 
   // Also print with banners (and ANSI color if viewer supports it)
   const char *CYAN = "\x1b[36m";

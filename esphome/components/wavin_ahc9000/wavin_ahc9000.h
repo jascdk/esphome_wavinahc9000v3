@@ -53,6 +53,9 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void set_yaml_text_sensor(text_sensor::TextSensor *s) { this->yaml_text_sensor_ = s; }
   // Accessor for last generated YAML (for HA notifications via lambda)
   std::string get_yaml_suggestion() const { return this->yaml_last_suggestion_; }
+  std::string get_yaml_climate() const { return this->yaml_last_climate_; }
+  std::string get_yaml_battery() const { return this->yaml_last_battery_; }
+  std::string get_yaml_temperature() const { return this->yaml_last_temperature_; }
 
   // Data access
   float get_channel_current_temp(uint8_t channel) const;
@@ -91,6 +94,9 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::map<uint8_t, sensor::Sensor *> temperature_sensors_;
   text_sensor::TextSensor *yaml_text_sensor_{nullptr};
   std::string yaml_last_suggestion_{};
+  std::string yaml_last_climate_{};
+  std::string yaml_last_battery_{};
+  std::string yaml_last_temperature_{};
   std::vector<uint8_t> active_channels_;
   std::map<uint8_t, climate::ClimateMode> desired_mode_; // desired mode to reconcile after refresh
   std::set<uint8_t> strict_mode_channels_; // channels opting into strict baseline writes
