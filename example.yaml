@@ -33,13 +33,17 @@ wavin_ahc9000:
   update_interval: 5s
   allow_mode_writes: false
   # Auto-generate entities
-  auto_climates: true
+  # auto_climates: true  # temporarily disabled in code; define climates below if needed
   temperature_sensors: true
   battery_sensors: true
   auto_channels: all
   name_prefix: "Zone "
 
-climate: []
+climate:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Zone 1"
+    channel: 1
 
 sensor: []
 

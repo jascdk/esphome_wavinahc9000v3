@@ -62,17 +62,7 @@ async def to_code(config):
     channels = list(range(1, 17)) if (isinstance(config.get(CONF_AUTO_CHANNELS, "all"), str) and str(config.get(CONF_AUTO_CHANNELS)).lower() == "all") else list(config.get(CONF_AUTO_CHANNELS, []))
     prefix = config.get(CONF_NAME_PREFIX, "Zone ")
 
-    # Climates for all channels
-    if config.get(CONF_AUTO_CLIMATES, True):
-        for ch in channels:
-            c = cg.new_Pvariable(WavinZoneClimate)
-            # Minimal child config with a generated name
-            child_cfg = {"name": f"{prefix}{ch}"}
-            await climate.register_climate(c, child_cfg)
-            cg.add(c.set_parent(var))
-            cg.add(c.set_single_channel(ch))
-            cg.add(var.add_active_channel(ch))
-            cg.add(var.add_channel_climate(c))
+    # Climates auto-generation deferred (requires typed IDs); keep manual climate blocks for now.
 
     # Temperature and battery sensors per channel
     if config.get(CONF_TEMPERATURE_SENSORS, False) or config.get(CONF_BATTERY_SENSORS, False):
