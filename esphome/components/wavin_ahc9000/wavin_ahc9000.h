@@ -38,6 +38,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void add_channel_battery_sensor(uint8_t ch, sensor::Sensor *s);
   void add_channel_temperature_sensor(uint8_t ch, sensor::Sensor *s);
   void add_channel_comfort_setpoint_sensor(uint8_t ch, sensor::Sensor *s);
+  void add_channel_floor_temperature_sensor(uint8_t ch, sensor::Sensor *s);
   void add_active_channel(uint8_t ch);
 
   // Send commands
