@@ -460,6 +460,9 @@ void WavinAHC9000::generate_yaml_suggestion() {
     }
   }
 
+  // Persist active channels for chunk helpers
+  this->yaml_active_channels_ = active;
+
   // Build three YAML sections separately, then compose
   std::string yaml_climate;
   yaml_climate += "climate:\n";
@@ -528,6 +531,65 @@ void WavinAHC9000::generate_yaml_suggestion() {
     }
   }
   ESP_LOGI(TAG, "%s===================== Wavin YAML SUGGESTION END =====================%s", CYAN, RESET);
+}
+
+// --- YAML chunk helpers (whole-entity, not byte size) ---
+static std::string build_climate_yaml_for(const std::vector<uint8_t> &chs) {
+  std::string y;
+  if (chs.empty()) return y;
+  y += "climate:\n";
+  for (auto ch : chs) {
+    y += "  - platform: wavin_ahc9000\n";
+    y += "    wavin_ahc9000_id: wavin\n";
+    y += "    name: \"Zone " + std::to_string((int) ch) + "\"\n";
+    y += "    channel: " + std::to_string((int) ch) + "\n";
+  }
+  return y;
+}
+static std::string build_battery_yaml_for(const std::vector<uint8_t> &chs) {
+  std::string y;
+  if (chs.empty()) return y;
+  y += "sensor:\n";
+  for (auto ch : chs) {
+    y += "  - platform: wavin_ahc9000\n";
+    y += "    wavin_ahc9000_id: wavin\n";
+    y += "    name: \"Zone " + std::to_string((int) ch) + " Battery\"\n";
+    y += "    channel: " + std::to_string((int) ch) + "\n";
+    y += "    type: battery\n";
+  }
+  return y;
+}
+static std::string build_temperature_yaml_for(const std::vector<uint8_t> &chs) {
+  std::string y;
+  if (chs.empty()) return y;
+  y += "sensor:\n";
+  for (auto ch : chs) {
+    y += "  - platform: wavin_ahc9000\n";
+    y += "    wavin_ahc9000_id: wavin\n";
+    y += "    name: \"Zone " + std::to_string((int) ch) + " Temperature\"\n";
+    y += "    channel: " + std::to_string((int) ch) + "\n";
+    y += "    type: temperature\n";
+  }
+  return y;
+}
+
+std::string WavinAHC9000::get_yaml_climate_chunk(uint8_t start, uint8_t count) const {
+  if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
+  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
+  std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
+  return build_climate_yaml_for(chs);
+}
+std::string WavinAHC9000::get_yaml_battery_chunk(uint8_t start, uint8_t count) const {
+  if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
+  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
+  std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
+  return build_battery_yaml_for(chs);
+}
+std::string WavinAHC9000::get_yaml_temperature_chunk(uint8_t start, uint8_t count) const {
+  if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
+  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
+  std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
+  return build_temperature_yaml_for(chs);
 }
 
 void WavinAHC9000::publish_updates() {

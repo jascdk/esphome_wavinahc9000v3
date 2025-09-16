@@ -77,15 +77,180 @@ api:
       then:
         - lambda: |-
             id(wavin).generate_yaml_suggestion();
-    # Optional: push the full YAML to a Home Assistant persistent notification
-    - service: wavin_notify_yaml
+    # One-button: send multiple notifications with whole-entity chunks (3 per notification)
+    - service: wavin_notify_yaml_chunks
       then:
-        - homeassistant.service:
-            service: persistent_notification.create
-            data:
-              title: Wavin YAML Suggestion
-              message: !lambda |-
-                return id(wavin).get_yaml_suggestion().c_str();
+        # Ensure latest suggestion
+        - lambda: |-
+            id(wavin).generate_yaml_suggestion();
+        # Climate chunks (3 per notification)
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 0;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (climate 1)
+                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(0, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 3;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (climate 2)
+                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(3, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 6;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (climate 3)
+                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(6, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 9;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (climate 4)
+                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(9, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 12;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (climate 5)
+                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(12, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 15;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (climate 6)
+                    message: !lambda 'return id(wavin).get_yaml_climate_chunk(15, 3);'
+
+        # Battery sensor chunks (3 per notification)
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 0;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (battery 1)
+                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(0, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 3;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (battery 2)
+                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(3, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 6;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (battery 3)
+                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(6, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 9;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (battery 4)
+                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(9, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 12;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (battery 5)
+                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(12, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 15;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (battery 6)
+                    message: !lambda 'return id(wavin).get_yaml_battery_chunk(15, 3);'
+
+        # Temperature sensor chunks (3 per notification)
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 0;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (temperature 1)
+                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(0, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 3;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (temperature 2)
+                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(3, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 6;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (temperature 3)
+                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(6, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 9;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (temperature 4)
+                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(9, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 12;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (temperature 5)
+                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(12, 3);'
+        - if:
+            condition:
+              lambda: 'return id(wavin).get_yaml_active_count() > 15;'
+            then:
+              - homeassistant.service:
+                  service: persistent_notification.create
+                  data:
+                    title: Wavin YAML (temperature 6)
+                    message: !lambda 'return id(wavin).get_yaml_temperature_chunk(15, 3);'
+  # (Legacy split services removed in favor of chunked whole-entity notifications)
 
     # Optional: write YAML into an input_text (create input_text.wavin_yaml in HA first)
     # - service: wavin_write_yaml_to_input_text
