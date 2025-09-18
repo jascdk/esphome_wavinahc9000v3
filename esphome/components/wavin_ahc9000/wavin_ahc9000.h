@@ -3,6 +3,7 @@
 #include "esphome/components/climate/climate.h"
 #include "esphome/components/uart/uart.h"
 #include "esphome/components/text_sensor/text_sensor.h"
+#include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/core/component.h"
 
 #include <vector>
@@ -14,6 +15,7 @@
 namespace esphome {
 namespace sensor { class Sensor; }
 namespace text_sensor { class TextSensor; }
+namespace binary_sensor { class BinarySensor; }
 namespace wavin_ahc9000 {
 
 // Forward
@@ -52,6 +54,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void request_status_channel(uint8_t ch_index);
   void normalize_channel_config(uint8_t channel, bool off);
   void generate_yaml_suggestion();
+  void set_yaml_ready_sensor(sensor::Sensor *s);
+  void set_yaml_ready_binary_sensor(binary_sensor::BinarySensor *s) { this->yaml_ready_binary_sensor_ = s; }
   void set_yaml_text_sensor(text_sensor::TextSensor *s) { this->yaml_text_sensor_ = s; }
   // Accessor for last generated YAML (for HA notifications via lambda)
   std::string get_yaml_suggestion() const { return this->yaml_last_suggestion_; }
@@ -62,6 +66,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   // Chunk helpers: return YAML entity blocks (complete entities only, NO section header)
   // start is 0-based entity index among discovered active channels; count is number of entities to include
   std::string get_yaml_climate_chunk(uint8_t start, uint8_t count) const;
+  std::string get_yaml_comfort_climate_chunk(uint8_t start, uint8_t count) const;
   std::string get_yaml_battery_chunk(uint8_t start, uint8_t count) const;
   std::string get_yaml_temperature_chunk(uint8_t start, uint8_t count) const;
   std::string get_yaml_floor_temperature_chunk(uint8_t start, uint8_t count) const;
@@ -70,6 +75,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   // Data access
   float get_channel_current_temp(uint8_t channel) const;
   float get_channel_setpoint(uint8_t channel) const;
+  float get_channel_floor_temp(uint8_t channel) const;
   climate::ClimateMode get_channel_mode(uint8_t channel) const;
   climate::ClimateAction get_channel_action(uint8_t channel) const;
 
@@ -106,6 +112,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::map<uint8_t, sensor::Sensor *> temperature_sensors_;
   std::map<uint8_t, sensor::Sensor *> floor_temperature_sensors_;
   std::map<uint8_t, sensor::Sensor *> comfort_setpoint_sensors_;
+  sensor::Sensor *yaml_ready_sensor_{nullptr};
+  binary_sensor::BinarySensor *yaml_ready_binary_sensor_{nullptr};
   text_sensor::TextSensor *yaml_text_sensor_{nullptr};
   std::string yaml_last_suggestion_{};
   std::string yaml_last_climate_{};
@@ -114,6 +122,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::string yaml_last_floor_temperature_{};
   std::vector<uint8_t> yaml_active_channels_{}; // active channels discovered during last YAML generation
   std::vector<uint8_t> yaml_floor_channels_{}; // subset with detected floor sensors during last YAML generation
+  std::vector<uint8_t> yaml_comfort_climate_channels_{}; // same as floor subset; for comfort climate generation
   std::vector<uint8_t> active_channels_;
   std::map<uint8_t, climate::ClimateMode> desired_mode_; // desired mode to reconcile after refresh
   std::set<uint8_t> strict_mode_channels_; // channels opting into strict baseline writes
@@ -128,6 +137,10 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   uint8_t channel_step_[16] = {0};
   std::vector<uint8_t> urgent_channels_{}; // channels scheduled for immediate refresh on next update
   bool allow_mode_writes_{true};
+
+  // YAML readiness tracking: which channels are present and which had an element block read at least once
+  uint16_t yaml_primary_present_mask_{0};  // bit i set when channel (i+1) has a primary element and no tp lost
+  uint16_t yaml_elem_read_mask_{0};        // bit i set when we've successfully read the element block for channel (i+1)
 
   // Protocol constants
   static constexpr uint8_t DEVICE_ADDR = 0x01;
@@ -179,6 +192,10 @@ inline void WavinAHC9000::add_channel_floor_temperature_sensor(uint8_t ch, senso
   this->floor_temperature_sensors_[ch] = s;
 }
 
+inline void WavinAHC9000::set_yaml_ready_sensor(sensor::Sensor *s) {
+  this->yaml_ready_sensor_ = s;
+}
+
 class WavinZoneClimate : public climate::Climate, public Component {
  public:
   void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
@@ -187,6 +204,7 @@ class WavinZoneClimate : public climate::Climate, public Component {
   this->single_channel_set_ = true;
   this->members_.clear();
   }
+  void set_use_floor_temperature(bool v) { this->use_floor_temperature_ = v; }
   void set_members(const std::vector<int> &members) {
     this->members_.clear();
     for (int m : members) this->members_.push_back(static_cast<uint8_t>(m));
@@ -205,6 +223,7 @@ class WavinZoneClimate : public climate::Climate, public Component {
   uint8_t single_channel_{0};
   bool single_channel_set_{false};
   std::vector<uint8_t> members_{};
+  bool use_floor_temperature_{false};
 };
 
 // Repair button removed; use API service to normalize

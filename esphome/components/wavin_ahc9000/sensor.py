@@ -21,7 +21,7 @@ CONFIG_SCHEMA = sensor.sensor_schema().extend(
     {
         cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000),
         cv.Required(CONF_CHANNEL): cv.int_range(min=1, max=16),
-    cv.Required(CONF_TYPE): cv.one_of("battery", "temperature", "comfort_setpoint", "floor_temperature", lower=True),
+    cv.Required(CONF_TYPE): cv.one_of("battery", "temperature", "comfort_setpoint", "floor_temperature", "yaml_ready", lower=True),
     }
 )
 
@@ -36,6 +36,12 @@ async def to_code(config):
         cg.add(sens.set_icon(ICON_BATTERY))
         cg.add(sens.set_accuracy_decimals(0))
         cg.add(hub.add_channel_battery_sensor(config[CONF_CHANNEL], sens))
+    elif config[CONF_TYPE] == "yaml_ready":
+        # Boolean-ish readiness as 0/1
+        cg.add(sens.set_icon("mdi:check-decagram"))
+        cg.add(sens.set_unit_of_measurement(None))
+        cg.add(sens.set_accuracy_decimals(0))
+        cg.add(hub.set_yaml_ready_sensor(sens))
     else:
         # temperature & comfort_setpoint share temperature meta
         cg.add(sens.set_device_class(DEVICE_CLASS_TEMPERATURE))

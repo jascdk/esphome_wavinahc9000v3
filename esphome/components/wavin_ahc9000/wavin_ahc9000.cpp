@@ -82,6 +82,7 @@ void WavinAHC9000::update() {
       uint8_t elem_page = (uint8_t) (st.primary_index - 1);
       if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
         st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
+        this->yaml_elem_read_mask_ |= (1u << (ch - 1));
         if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
           float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
           // Basic plausibility filter (-20..90C)
@@ -121,6 +122,7 @@ void WavinAHC9000::update() {
             st.primary_index = v & CH_PRIMARY_ELEMENT_ELEMENT_MASK;
             st.all_tp_lost = (v & CH_PRIMARY_ELEMENT_ALL_TP_LOST_MASK) != 0;
             ESP_LOGD(TAG, "CH%u primary elem=%u lost=%s", ch_num, (unsigned) st.primary_index, st.all_tp_lost ? "Y" : "N");
+            if (st.primary_index > 0 && !st.all_tp_lost) this->yaml_primary_present_mask_ |= (1u << (ch_num - 1));
           } else {
             ESP_LOGW(TAG, "CH%u: primary element read failed", ch_num);
           }
@@ -166,6 +168,7 @@ void WavinAHC9000::update() {
             uint8_t elem_page = (uint8_t) (st.primary_index - 1);
             if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
               st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
+              this->yaml_elem_read_mask_ |= (1u << (ch_num - 1));
               if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
                 float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
                 if (ft > -20 && ft < 90) {
@@ -466,6 +469,7 @@ void WavinAHC9000::generate_yaml_suggestion() {
       bool all_tp_lost = (v & CH_PRIMARY_ELEMENT_ALL_TP_LOST_MASK) != 0;
       if (primary_index > 0 && !all_tp_lost) {
         active.push_back(ch);
+        this->yaml_primary_present_mask_ |= (1u << (ch - 1));
         // Opportunistically fill cache (does not change behavior)
         auto &st = this->channels_[ch];
         st.primary_index = primary_index;
@@ -495,6 +499,26 @@ void WavinAHC9000::generate_yaml_suggestion() {
     yaml_climate += "    wavin_ahc9000_id: wavin\n";
     yaml_climate += "    name: \"Zone " + std::to_string((int) ch) + "\"\n";
     yaml_climate += "    channel: " + std::to_string((int) ch) + "\n";
+  }
+
+  // Comfort climates (floor-based current temp) for channels with detected floor sensor
+  std::string yaml_comfort_climate;
+  bool any_comfort = false;
+  this->yaml_comfort_climate_channels_.clear();
+  for (auto ch : active) {
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end() && it->second.has_floor_sensor) {
+      if (!any_comfort) {
+        yaml_comfort_climate += "climate:\n";
+        any_comfort = true;
+      }
+      yaml_comfort_climate += "  - platform: wavin_ahc9000\n";
+      yaml_comfort_climate += "    wavin_ahc9000_id: wavin\n";
+      yaml_comfort_climate += "    name: \"Zone " + std::to_string((int) ch) + " Comfort\"\n";
+      yaml_comfort_climate += "    channel: " + std::to_string((int) ch) + "\n";
+      yaml_comfort_climate += "    use_floor_temperature: true\n";
+      this->yaml_comfort_climate_channels_.push_back(ch);
+    }
   }
 
   std::string yaml_batt;
@@ -536,6 +560,9 @@ void WavinAHC9000::generate_yaml_suggestion() {
   }
 
   std::string out = yaml_climate + "\n" + yaml_batt + "\n" + yaml_temp;
+  if (any_comfort) {
+    out += "\n" + yaml_comfort_climate;
+  }
   if (any_floor) {
     out += "\n" + yaml_floor_temp;
   }
@@ -658,6 +685,24 @@ std::string WavinAHC9000::get_yaml_temperature_chunk(uint8_t start, uint8_t coun
   std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
   return build_temperature_yaml_for(chs);
 }
+static std::string build_comfort_climate_yaml_for(const std::vector<uint8_t> &chs) {
+  std::string y;
+  if (chs.empty()) return y;
+  for (auto ch : chs) {
+    y += "- platform: wavin_ahc9000\n";
+    y += "  wavin_ahc9000_id: wavin\n";
+    y += "  name: \"Zone " + std::to_string((int) ch) + " Comfort\"\n";
+    y += "  channel: " + std::to_string((int) ch) + "\n";
+    y += "  use_floor_temperature: true\n";
+  }
+  return y;
+}
+std::string WavinAHC9000::get_yaml_comfort_climate_chunk(uint8_t start, uint8_t count) const {
+  if (start >= this->yaml_comfort_climate_channels_.size() || count == 0) return std::string("");
+  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_comfort_climate_channels_.size(), (size_t) start + count);
+  std::vector<uint8_t> chs(this->yaml_comfort_climate_channels_.begin() + start, this->yaml_comfort_climate_channels_.begin() + end);
+  return build_comfort_climate_yaml_for(chs);
+}
 std::string WavinAHC9000::get_yaml_floor_temperature_chunk(uint8_t start, uint8_t count) const {
   if (start >= this->yaml_floor_channels_.size() || count == 0) return std::string("");
   uint8_t end = (uint8_t) std::min<size_t>(this->yaml_floor_channels_.size(), (size_t) start + count);
@@ -704,6 +749,18 @@ void WavinAHC9000::publish_updates() {
       if (!std::isnan(v)) s->publish_state(v);
     }
   }
+
+  // YAML readiness: ready if we have discovered at least one active channel and have completed at least one element read for all of them.
+  {
+    uint16_t required = this->yaml_primary_present_mask_;
+    bool ready = (required != 0) && ((this->yaml_elem_read_mask_ & required) == required);
+    if (this->yaml_ready_sensor_ != nullptr) {
+      this->yaml_ready_sensor_->publish_state(ready ? 1.0f : 0.0f);
+    }
+    if (this->yaml_ready_binary_sensor_ != nullptr) {
+      this->yaml_ready_binary_sensor_->publish_state(ready);
+    }
+  }
 }
 
 float WavinAHC9000::get_channel_current_temp(uint8_t channel) const {
@@ -713,6 +770,10 @@ float WavinAHC9000::get_channel_current_temp(uint8_t channel) const {
 float WavinAHC9000::get_channel_setpoint(uint8_t channel) const {
   auto it = this->channels_.find(channel);
   return it == this->channels_.end() ? NAN : it->second.setpoint_c;
+}
+float WavinAHC9000::get_channel_floor_temp(uint8_t channel) const {
+  auto it = this->channels_.find(channel);
+  return it == this->channels_.end() ? NAN : it->second.floor_temp_c;
 }
 climate::ClimateMode WavinAHC9000::get_channel_mode(uint8_t channel) const {
   auto it = this->channels_.find(channel);
@@ -772,7 +833,11 @@ void WavinZoneClimate::control(const climate::ClimateCall &call) {
 void WavinZoneClimate::update_from_parent() {
   if (this->single_channel_set_) {
     uint8_t ch = this->single_channel_;
-    this->current_temperature = this->parent_->get_channel_current_temp(ch);
+    if (this->use_floor_temperature_) {
+      this->current_temperature = this->parent_->get_channel_floor_temp(ch);
+    } else {
+      this->current_temperature = this->parent_->get_channel_current_temp(ch);
+    }
     this->target_temperature = this->parent_->get_channel_setpoint(ch);
     this->mode = this->parent_->get_channel_mode(ch);
     // Action: derive from temperatures with a small deadband, fallback to controller bit

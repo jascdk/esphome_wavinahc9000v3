@@ -57,6 +57,56 @@ text_sensor:
     lambda: |-
       return id(wavin).get_yaml_climate_chunk(14, 2);
 
+  # Chunked YAML for comfort climate (floor-based current temp), only for floor-capable channels
+  - platform: template
+    id: yaml_comfort_climate_1
+    name: "Wavin YAML Comfort Climate 1"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_comfort_climate_chunk(0, 2);
+  - platform: template
+    id: yaml_comfort_climate_2
+    name: "Wavin YAML Comfort Climate 2"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_comfort_climate_chunk(2, 2);
+  - platform: template
+    id: yaml_comfort_climate_3
+    name: "Wavin YAML Comfort Climate 3"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_comfort_climate_chunk(4, 2);
+  - platform: template
+    id: yaml_comfort_climate_4
+    name: "Wavin YAML Comfort Climate 4"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_comfort_climate_chunk(6, 2);
+  - platform: template
+    id: yaml_comfort_climate_5
+    name: "Wavin YAML Comfort Climate 5"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_comfort_climate_chunk(8, 2);
+  - platform: template
+    id: yaml_comfort_climate_6
+    name: "Wavin YAML Comfort Climate 6"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_comfort_climate_chunk(10, 2);
+  - platform: template
+    id: yaml_comfort_climate_7
+    name: "Wavin YAML Comfort Climate 7"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_comfort_climate_chunk(12, 2);
+  - platform: template
+    id: yaml_comfort_climate_8
+    name: "Wavin YAML Comfort Climate 8"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_comfort_climate_chunk(14, 2);
+
   # Chunked YAML for battery
   - platform: template
     id: yaml_battery_1
@@ -225,6 +275,14 @@ api:
             id(yaml_climate_6).publish_state(id(wavin).get_yaml_climate_chunk(10, 2));
             id(yaml_climate_7).publish_state(id(wavin).get_yaml_climate_chunk(12, 2));
             id(yaml_climate_8).publish_state(id(wavin).get_yaml_climate_chunk(14, 2));
+            id(yaml_comfort_climate_1).publish_state(id(wavin).get_yaml_comfort_climate_chunk(0, 2));
+            id(yaml_comfort_climate_2).publish_state(id(wavin).get_yaml_comfort_climate_chunk(2, 2));
+            id(yaml_comfort_climate_3).publish_state(id(wavin).get_yaml_comfort_climate_chunk(4, 2));
+            id(yaml_comfort_climate_4).publish_state(id(wavin).get_yaml_comfort_climate_chunk(6, 2));
+            id(yaml_comfort_climate_5).publish_state(id(wavin).get_yaml_comfort_climate_chunk(8, 2));
+            id(yaml_comfort_climate_6).publish_state(id(wavin).get_yaml_comfort_climate_chunk(10, 2));
+            id(yaml_comfort_climate_7).publish_state(id(wavin).get_yaml_comfort_climate_chunk(12, 2));
+            id(yaml_comfort_climate_8).publish_state(id(wavin).get_yaml_comfort_climate_chunk(14, 2));
             id(yaml_battery_1).publish_state(id(wavin).get_yaml_battery_chunk(0, 2));
             id(yaml_battery_2).publish_state(id(wavin).get_yaml_battery_chunk(2, 2));
             id(yaml_battery_3).publish_state(id(wavin).get_yaml_battery_chunk(4, 2));

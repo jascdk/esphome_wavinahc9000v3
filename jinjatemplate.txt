@@ -3,6 +3,7 @@ Home Assistant Jinja templates to stitch chunked YAML sensors into complete sect
 Prerequisites
 - Call the ESPHome service esphome.wavin_publish_yaml_text_sensors to populate the chunk sensors.
 - Ensure sensors like sensor.wavin_yaml_climate_1..8, sensor.wavin_yaml_battery_1..8, sensor.wavin_yaml_temperature_1..8 have non-empty states.
+ - (Optional) For floor-based comfort climates: sensor.wavin_yaml_comfort_climate_1..8 will be present when floor probes are detected.
 - (Optional) If you have floor probes: sensor.wavin_yaml_floor_temperature_1..8 will be present only after a valid floor reading was detected.
 - Each chunk sensor outputs only entity blocks (no climate:/sensor: header). The Jinja adds headers and indentation.
 
@@ -11,6 +12,11 @@ All-in-one (climate + sensor)
 {# Gather chunk sensors and indent entity blocks #}
 {% set climates = states.sensor
   | selectattr('entity_id','search','_yaml_climate_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | sort(attribute='entity_id') | list %}
+{% set comfort_climates = states.sensor
+  | selectattr('entity_id','search','_yaml_comfort_climate_')
   | selectattr('state','ne','unknown')
   | selectattr('state','ne','unavailable')
   | sort(attribute='entity_id') | list %}
@@ -33,6 +39,9 @@ All-in-one (climate + sensor)
 
 climate:
 {% for s in climates %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% for s in comfort_climates %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
 
@@ -58,9 +67,17 @@ Climate-only
   | selectattr('state','ne','unknown')
   | selectattr('state','ne','unavailable')
   | sort(attribute='entity_id') | list %}
+{% set comfort_climates = states.sensor
+  | selectattr('entity_id','search','_yaml_comfort_climate_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | sort(attribute='entity_id') | list %}
 
 climate:
 {% for s in climates %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% for s in comfort_climates %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
 {% endraw %}
@@ -97,4 +114,18 @@ sensor:
   {{ (s.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
 {% endif %}
+{% endraw %}
+
+Comfort climate only
+{% raw %}
+{% set comfort_climates = states.sensor
+  | selectattr('entity_id','search','_yaml_comfort_climate_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | sort(attribute='entity_id') | list %}
+
+climate:
+{% for s in comfort_climates %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
 {% endraw %}
