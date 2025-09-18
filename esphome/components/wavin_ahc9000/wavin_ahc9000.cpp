@@ -88,11 +88,9 @@ void WavinAHC9000::update() {
           // Basic plausibility filter (>1..90C) to avoid default/zero noise
           if (ft > 1.0f && ft < 90.0f) {
             st.floor_temp_c = ft;
-            // require noticeable deviation from air temp to avoid spurious duplicates
-            if (!std::isnan(st.current_temp_c) && std::fabs(st.current_temp_c - ft) > 0.4f) {
-              if (st.floor_detect_hits < 255) st.floor_detect_hits++;
-              if (st.floor_detect_hits >= 2) st.has_floor_sensor = true;
-            }
+            bool threshold_hit = (ft >= 15.0f);
+            bool deviates = (!std::isnan(st.current_temp_c) && std::fabs(st.current_temp_c - ft) > 0.2f);
+            if (threshold_hit || deviates) st.has_floor_sensor = true;
           } else {
             st.floor_temp_c = NAN;
           }
@@ -177,10 +175,9 @@ void WavinAHC9000::update() {
                 float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
                 if (ft > 1.0f && ft < 90.0f) {
                   st.floor_temp_c = ft;
-                  if (!std::isnan(st.current_temp_c) && std::fabs(st.current_temp_c - ft) > 0.4f) {
-                    if (st.floor_detect_hits < 255) st.floor_detect_hits++;
-                    if (st.floor_detect_hits >= 2) st.has_floor_sensor = true;
-                  }
+                  bool threshold_hit = (ft >= 15.0f);
+                  bool deviates = (!std::isnan(st.current_temp_c) && std::fabs(st.current_temp_c - ft) > 0.2f);
+                  if (threshold_hit || deviates) st.has_floor_sensor = true;
                 } else {
                   st.floor_temp_c = NAN;
                 }
@@ -490,6 +487,29 @@ void WavinAHC9000::generate_yaml_suggestion() {
         }
         if (this->read_registers(CAT_PACKED, page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
           st.setpoint_c = this->raw_to_c(regs[0]);
+        }
+        // Try to read elements block to surface air/floor temps and detect floor probe immediately
+        uint8_t elem_page = (uint8_t) (primary_index - 1);
+        if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
+          st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
+          this->yaml_elem_read_mask_ |= (1u << (ch - 1));
+          if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
+            float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
+            if (ft > 1.0f && ft < 90.0f) {
+              st.floor_temp_c = ft;
+              bool threshold_hit = (ft >= 15.0f);
+              bool deviates = (!std::isnan(st.current_temp_c) && std::fabs(st.current_temp_c - ft) > 0.2f);
+              if (threshold_hit || deviates) st.has_floor_sensor = true;
+            } else {
+              st.floor_temp_c = NAN;
+            }
+          }
+          // Battery (optional)
+          if (regs.size() > ELEM_BATTERY_STATUS) {
+            uint16_t raw = regs[ELEM_BATTERY_STATUS];
+            uint8_t steps = (raw > 10) ? 10 : (uint8_t) raw;
+            st.battery_pct = (uint8_t) (steps * 10);
+          }
         }
       }
     }
