@@ -54,7 +54,6 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void request_status_channel(uint8_t ch_index);
   void normalize_channel_config(uint8_t channel, bool off);
   void generate_yaml_suggestion();
-  void set_yaml_ready_sensor(sensor::Sensor *s);
   void set_yaml_ready_binary_sensor(binary_sensor::BinarySensor *s) { this->yaml_ready_binary_sensor_ = s; }
   void set_yaml_text_sensor(text_sensor::TextSensor *s) { this->yaml_text_sensor_ = s; }
   // Accessor for last generated YAML (for HA notifications via lambda)
@@ -103,6 +102,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   uint16_t primary_index{0};
   bool all_tp_lost{false};
     bool has_floor_sensor{false};
+    uint8_t floor_detect_hits{0}; // conservative detection score for floor probe presence
   };
 
   std::map<uint8_t, ChannelState> channels_;
@@ -112,7 +112,6 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::map<uint8_t, sensor::Sensor *> temperature_sensors_;
   std::map<uint8_t, sensor::Sensor *> floor_temperature_sensors_;
   std::map<uint8_t, sensor::Sensor *> comfort_setpoint_sensors_;
-  sensor::Sensor *yaml_ready_sensor_{nullptr};
   binary_sensor::BinarySensor *yaml_ready_binary_sensor_{nullptr};
   text_sensor::TextSensor *yaml_text_sensor_{nullptr};
   std::string yaml_last_suggestion_{};
@@ -192,9 +191,7 @@ inline void WavinAHC9000::add_channel_floor_temperature_sensor(uint8_t ch, senso
   this->floor_temperature_sensors_[ch] = s;
 }
 
-inline void WavinAHC9000::set_yaml_ready_sensor(sensor::Sensor *s) {
-  this->yaml_ready_sensor_ = s;
-}
+// numeric yaml_ready sensor removed
 
 class WavinZoneClimate : public climate::Climate, public Component {
  public:

@@ -182,9 +182,9 @@ sensor:
     name: "Zone 3 Floor Temperature"
 ```
 
-This reads element index 0x05 (same scaling as air). A plausibility filter (-20..90°C) is applied; invalid or missing values result in the sensor staying unavailable.
+This reads element index 0x05 (same scaling as air). A plausibility filter (>1..90°C) is applied; invalid or missing values result in the sensor staying unavailable.
 
-Automatic detection: The component now marks a channel as having a floor sensor only after at least one plausible floor reading is observed. Until then, any configured `floor_temperature` sensor will remain unavailable (rather than showing 0.0). The YAML generation services (`_wavin_generate_yaml` / `_wavin_publish_yaml_text_sensors`) will include floor temperature sensor entity suggestions only for channels where a valid floor probe has already been detected. If you generate YAML immediately after boot and a floor probe wasn’t yet detected, just trigger the service again later after some polling cycles.
+Automatic detection: The component now marks a channel as having a floor sensor only after at least one plausible, non-zero floor reading is observed (> 1.0°C and < 90°C). Until then, any configured `floor_temperature` sensor will remain unavailable (rather than showing 0.0). The YAML generation services (`_wavin_generate_yaml` / `_wavin_publish_yaml_text_sensors`) will include floor temperature sensor entity suggestions only for channels where a valid floor probe has already been detected. If you generate YAML immediately after boot and a floor probe wasn’t yet detected, just trigger the service again later after some polling cycles.
 
 Chunked YAML: If at least one floor probe is detected, an additional chunk set is exposed via the `get_yaml_floor_temperature_chunk` API internally (usable in future text sensors). If you add corresponding text sensors (e.g. `wavin_yaml_floor_temperature_1..8`), you can stitch them with the same Jinja approach as other sensor chunks by adding an extra `sensor:` header and their content.
 
@@ -204,4 +204,4 @@ binary_sensor:
     name: "Wavin YAML Ready"
 ```
 
-Note: A legacy numeric sensor variant also exists under `sensor:` with `type: yaml_ready` that reports 0/1. Prefer the binary_sensor form for new setups.
+This readiness indicator is available as a binary_sensor in this branch.

@@ -85,10 +85,14 @@ void WavinAHC9000::update() {
         this->yaml_elem_read_mask_ |= (1u << (ch - 1));
         if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
           float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
-          // Basic plausibility filter (-20..90C)
-          if (ft > -20 && ft < 90) {
+          // Basic plausibility filter (>1..90C) to avoid default/zero noise
+          if (ft > 1.0f && ft < 90.0f) {
             st.floor_temp_c = ft;
-            st.has_floor_sensor = true; // mark presence once a sane value observed
+            // require noticeable deviation from air temp to avoid spurious duplicates
+            if (!std::isnan(st.current_temp_c) && std::fabs(st.current_temp_c - ft) > 0.4f) {
+              if (st.floor_detect_hits < 255) st.floor_detect_hits++;
+              if (st.floor_detect_hits >= 2) st.has_floor_sensor = true;
+            }
           } else {
             st.floor_temp_c = NAN;
           }
@@ -171,9 +175,12 @@ void WavinAHC9000::update() {
               this->yaml_elem_read_mask_ |= (1u << (ch_num - 1));
               if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
                 float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
-                if (ft > -20 && ft < 90) {
+                if (ft > 1.0f && ft < 90.0f) {
                   st.floor_temp_c = ft;
-                  st.has_floor_sensor = true;
+                  if (!std::isnan(st.current_temp_c) && std::fabs(st.current_temp_c - ft) > 0.4f) {
+                    if (st.floor_detect_hits < 255) st.floor_detect_hits++;
+                    if (st.floor_detect_hits >= 2) st.has_floor_sensor = true;
+                  }
                 } else {
                   st.floor_temp_c = NAN;
                 }
@@ -754,9 +761,6 @@ void WavinAHC9000::publish_updates() {
   {
     uint16_t required = this->yaml_primary_present_mask_;
     bool ready = (required != 0) && ((this->yaml_elem_read_mask_ & required) == required);
-    if (this->yaml_ready_sensor_ != nullptr) {
-      this->yaml_ready_sensor_->publish_state(ready ? 1.0f : 0.0f);
-    }
     if (this->yaml_ready_binary_sensor_ != nullptr) {
       this->yaml_ready_binary_sensor_->publish_state(ready);
     }
