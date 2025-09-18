@@ -469,6 +469,33 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
   }
 }
 
+void WavinAHC9000::write_channel_floor_min_temperature(uint8_t channel, float celsius) {
+  if (channel < 1 || channel > 16) return;
+  // Clamp to a sane range; controller likely enforces further constraints
+  if (celsius < 5.0f) celsius = 5.0f;
+  if (celsius > 35.0f) celsius = 35.0f;
+  uint8_t page = (uint8_t) (channel - 1);
+  uint16_t raw = this->c_to_raw(celsius);
+  if (this->write_register(CAT_PACKED, page, PACKED_FLOOR_MIN_TEMPERATURE, raw)) {
+    this->channels_[channel].floor_min_c = celsius;
+    this->urgent_channels_.push_back(channel);
+    this->suspend_polling_until_ = millis() + 100;
+  }
+}
+
+void WavinAHC9000::write_channel_floor_max_temperature(uint8_t channel, float celsius) {
+  if (channel < 1 || channel > 16) return;
+  if (celsius < 5.0f) celsius = 5.0f;
+  if (celsius > 35.0f) celsius = 35.0f;
+  uint8_t page = (uint8_t) (channel - 1);
+  uint16_t raw = this->c_to_raw(celsius);
+  if (this->write_register(CAT_PACKED, page, PACKED_FLOOR_MAX_TEMPERATURE, raw)) {
+    this->channels_[channel].floor_max_c = celsius;
+    this->urgent_channels_.push_back(channel);
+    this->suspend_polling_until_ = millis() + 100;
+  }
+}
+
 void WavinAHC9000::set_strict_mode_write(uint8_t channel, bool enable) {
   if (channel < 1 || channel > 16) return;
   if (enable) this->strict_mode_channels_.insert(channel);
@@ -931,6 +958,14 @@ float WavinAHC9000::get_channel_floor_temp(uint8_t channel) const {
   auto it = this->channels_.find(channel);
   return it == this->channels_.end() ? NAN : it->second.floor_temp_c;
 }
+float WavinAHC9000::get_channel_floor_min_temp(uint8_t channel) const {
+  auto it = this->channels_.find(channel);
+  return it == this->channels_.end() ? NAN : it->second.floor_min_c;
+}
+float WavinAHC9000::get_channel_floor_max_temp(uint8_t channel) const {
+  auto it = this->channels_.find(channel);
+  return it == this->channels_.end() ? NAN : it->second.floor_max_c;
+}
 climate::ClimateMode WavinAHC9000::get_channel_mode(uint8_t channel) const {
   auto it = this->channels_.find(channel);
   return it == this->channels_.end() ? climate::CLIMATE_MODE_HEAT : it->second.mode;
@@ -946,8 +981,19 @@ climate::ClimateTraits WavinZoneClimate::traits() {
   t.set_supported_modes({climate::CLIMATE_MODE_HEAT, climate::CLIMATE_MODE_OFF});
   t.set_supports_current_temperature(true);
   t.set_supports_action(true);
-  t.set_visual_min_temperature(5);
-  t.set_visual_max_temperature(35);
+  // Default visual bounds
+  float vmin = 5.0f;
+  float vmax = 35.0f;
+  // For comfort climates (using floor temperature), adopt current floor min/max when available
+  if (this->single_channel_set_ && this->use_floor_temperature_) {
+    t.set_supports_two_point_target_temperature(true);
+    float fmin = this->parent_->get_channel_floor_min_temp(this->single_channel_);
+    float fmax = this->parent_->get_channel_floor_max_temp(this->single_channel_);
+    if (!std::isnan(fmin)) vmin = fmin;
+    if (!std::isnan(fmax)) vmax = fmax;
+  }
+  t.set_visual_min_temperature(vmin);
+  t.set_visual_max_temperature(vmax);
   t.set_visual_temperature_step(0.5f);
   return t;
 }
@@ -984,6 +1030,22 @@ void WavinZoneClimate::control(const climate::ClimateCall &call) {
     this->target_temperature = t;
   }
 
+  // If comfort climate is used, expose floor min/max through target_temperature_low/high
+  if (this->use_floor_temperature_ && this->single_channel_set_) {
+    if (call.get_target_temperature_low().has_value()) {
+      float lo = *call.get_target_temperature_low();
+      ESP_LOGD(TAG, "CTRL: floor min=%.1fC for %s", lo, this->get_name().c_str());
+      this->parent_->write_channel_floor_min_temperature(this->single_channel_, lo);
+      // optimistic update
+      // Note: traits() will reflect new limits on next update/publish
+    }
+    if (call.get_target_temperature_high().has_value()) {
+      float hi = *call.get_target_temperature_high();
+      ESP_LOGD(TAG, "CTRL: floor max=%.1fC for %s", hi, this->get_name().c_str());
+      this->parent_->write_channel_floor_max_temperature(this->single_channel_, hi);
+    }
+  }
+
   this->publish_state();
 }
 void WavinZoneClimate::update_from_parent() {
@@ -995,6 +1057,13 @@ void WavinZoneClimate::update_from_parent() {
       this->current_temperature = this->parent_->get_channel_current_temp(ch);
     }
     this->target_temperature = this->parent_->get_channel_setpoint(ch);
+    // For comfort climates, surface floor min/max as low/high targets
+    if (this->use_floor_temperature_) {
+      float fmin = this->parent_->get_channel_floor_min_temp(ch);
+      float fmax = this->parent_->get_channel_floor_max_temp(ch);
+      if (!std::isnan(fmin)) this->target_temperature_low = fmin;
+      if (!std::isnan(fmax)) this->target_temperature_high = fmax;
+    }
     this->mode = this->parent_->get_channel_mode(ch);
     // Action: derive from temperatures with a small deadband, fallback to controller bit
     const float db = 0.3f;  // hysteresis in °C

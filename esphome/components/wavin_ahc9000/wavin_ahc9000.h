@@ -50,6 +50,9 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void write_channel_setpoint(uint8_t channel, float celsius);
   void write_group_setpoint(const std::vector<uint8_t> &members, float celsius);
   void write_channel_mode(uint8_t channel, climate::ClimateMode mode);
+  // Write floor temperature limits (Celsius), clamped to sane bounds
+  void write_channel_floor_min_temperature(uint8_t channel, float celsius);
+  void write_channel_floor_max_temperature(uint8_t channel, float celsius);
   void refresh_channel_now(uint8_t channel);
   void set_strict_mode_write(uint8_t channel, bool enable);
   bool is_strict_mode_write(uint8_t channel) const;
@@ -82,6 +85,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   float get_channel_current_temp(uint8_t channel) const;
   float get_channel_setpoint(uint8_t channel) const;
   float get_channel_floor_temp(uint8_t channel) const;
+  float get_channel_floor_min_temp(uint8_t channel) const;
+  float get_channel_floor_max_temp(uint8_t channel) const;
   climate::ClimateMode get_channel_mode(uint8_t channel) const;
   climate::ClimateAction get_channel_action(uint8_t channel) const;
 
