@@ -178,8 +178,11 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   static constexpr uint8_t PACKED_STANDBY_TEMPERATURE = 0x04;
   static constexpr uint8_t PACKED_CONFIGURATION = 0x07;
   // Inferred from field dump: floor min/max setpoints exposed in PACKED page
-  static constexpr uint8_t PACKED_FLOOR_MIN_TEMPERATURE = 0x03; // e.g. 0x0096 -> 15.0C
-  static constexpr uint8_t PACKED_FLOOR_MAX_TEMPERATURE = 0x05; // e.g. 0x00FA -> 25.0C
+  // Updated mapping based on user dump for channel 10:
+  //   PACKED[10] = 0x00D7 (215 -> 21.5C) => MIN
+  //   PACKED[11] = 0x00FF (255 -> 25.5C) => MAX
+  static constexpr uint8_t PACKED_FLOOR_MIN_TEMPERATURE = 0x0A; // 21.5C example
+  static constexpr uint8_t PACKED_FLOOR_MAX_TEMPERATURE = 0x0B; // 25.5C example
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_MASK = 0x07;
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_MANUAL = 0x00;
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_STANDBY = 0x01;
