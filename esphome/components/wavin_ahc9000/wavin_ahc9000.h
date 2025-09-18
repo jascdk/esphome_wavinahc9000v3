@@ -102,7 +102,6 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   uint16_t primary_index{0};
   bool all_tp_lost{false};
     bool has_floor_sensor{false};
-    uint8_t floor_detect_hits{0}; // conservative detection score for floor probe presence
   };
 
   std::map<uint8_t, ChannelState> channels_;

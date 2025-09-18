@@ -88,9 +88,7 @@ void WavinAHC9000::update() {
           // Basic plausibility filter (>1..90C) to avoid default/zero noise
           if (ft > 1.0f && ft < 90.0f) {
             st.floor_temp_c = ft;
-            bool threshold_hit = (ft >= 15.0f);
-            bool deviates = (!std::isnan(st.current_temp_c) && std::fabs(st.current_temp_c - ft) > 0.2f);
-            if (threshold_hit || deviates) st.has_floor_sensor = true;
+            st.has_floor_sensor = true;
           } else {
             st.floor_temp_c = NAN;
           }
@@ -175,9 +173,7 @@ void WavinAHC9000::update() {
                 float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
                 if (ft > 1.0f && ft < 90.0f) {
                   st.floor_temp_c = ft;
-                  bool threshold_hit = (ft >= 15.0f);
-                  bool deviates = (!std::isnan(st.current_temp_c) && std::fabs(st.current_temp_c - ft) > 0.2f);
-                  if (threshold_hit || deviates) st.has_floor_sensor = true;
+                  st.has_floor_sensor = true;
                 } else {
                   st.floor_temp_c = NAN;
                 }
