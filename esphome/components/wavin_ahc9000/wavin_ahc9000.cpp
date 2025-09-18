@@ -74,6 +74,13 @@ void WavinAHC9000::update() {
     if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
       st.setpoint_c = this->raw_to_c(regs[0]);
     }
+    // Read floor min/max (read-only) during urgent refresh
+    if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MIN_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+      st.floor_min_c = this->raw_to_c(regs[0]);
+    }
+    if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MAX_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+      st.floor_max_c = this->raw_to_c(regs[0]);
+    }
     if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
       bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
       st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
@@ -153,6 +160,13 @@ void WavinAHC9000::update() {
           break;
         }
         case 3: {
+          // Read floor min/max too (read-only)
+          if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MIN_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+            st.floor_min_c = this->raw_to_c(regs[0]);
+          }
+          if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MAX_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+            st.floor_max_c = this->raw_to_c(regs[0]);
+          }
           if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
             bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
             st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
@@ -512,6 +526,13 @@ void WavinAHC9000::generate_yaml_suggestion() {
         if (this->read_registers(CAT_PACKED, page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
           st.setpoint_c = this->raw_to_c(regs[0]);
         }
+        // Floor min/max (read-only)
+        if (this->read_registers(CAT_PACKED, page, PACKED_FLOOR_MIN_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+          st.floor_min_c = this->raw_to_c(regs[0]);
+        }
+        if (this->read_registers(CAT_PACKED, page, PACKED_FLOOR_MAX_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+          st.floor_max_c = this->raw_to_c(regs[0]);
+        }
         // Try to read elements block to surface air/floor temps and detect floor probe immediately
         uint8_t elem_page = (uint8_t) (primary_index - 1);
         if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
@@ -610,12 +631,42 @@ void WavinAHC9000::generate_yaml_suggestion() {
     }
   }
 
+  // Floor min/max sensors (read-only): include when floor probe detected
+  std::string yaml_floor_min;
+  std::string yaml_floor_max;
+  bool any_floor_limits = false;
+  for (auto ch : active) {
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end() && it->second.has_floor_sensor) {
+      if (!any_floor_limits) {
+        yaml_floor_min += "sensor:\n";
+        yaml_floor_max += "sensor:\n";
+        any_floor_limits = true;
+      }
+      yaml_floor_min += "  - platform: wavin_ahc9000\n";
+      yaml_floor_min += "    wavin_ahc9000_id: wavin\n";
+      yaml_floor_min += "    name: \"Zone " + std::to_string((int) ch) + " Floor Min Temperature\"\n";
+      yaml_floor_min += "    channel: " + std::to_string((int) ch) + "\n";
+      yaml_floor_min += "    type: floor_min_temperature\n";
+
+      yaml_floor_max += "  - platform: wavin_ahc9000\n";
+      yaml_floor_max += "    wavin_ahc9000_id: wavin\n";
+      yaml_floor_max += "    name: \"Zone " + std::to_string((int) ch) + " Floor Max Temperature\"\n";
+      yaml_floor_max += "    channel: " + std::to_string((int) ch) + "\n";
+      yaml_floor_max += "    type: floor_max_temperature\n";
+    }
+  }
+
   std::string out = yaml_climate + "\n" + yaml_batt + "\n" + yaml_temp;
   if (any_comfort) {
     out += "\n" + yaml_comfort_climate;
   }
   if (any_floor) {
     out += "\n" + yaml_floor_temp;
+  }
+  if (any_floor_limits) {
+    out += "\n" + yaml_floor_min;
+    out += "\n" + yaml_floor_max;
   }
 
   // Build cached floor channel list for chunk helper usage
@@ -717,6 +768,30 @@ static std::string build_floor_temperature_yaml_for(const std::vector<uint8_t> &
   }
   return y;
 }
+static std::string build_floor_min_temperature_yaml_for(const std::vector<uint8_t> &chs) {
+  std::string y;
+  if (chs.empty()) return y;
+  for (auto ch : chs) {
+    y += "- platform: wavin_ahc9000\n";
+    y += "  wavin_ahc9000_id: wavin\n";
+    y += "  name: \"Zone " + std::to_string((int) ch) + " Floor Min Temperature\"\n";
+    y += "  channel: " + std::to_string((int) ch) + "\n";
+    y += "  type: floor_min_temperature\n";
+  }
+  return y;
+}
+static std::string build_floor_max_temperature_yaml_for(const std::vector<uint8_t> &chs) {
+  std::string y;
+  if (chs.empty()) return y;
+  for (auto ch : chs) {
+    y += "- platform: wavin_ahc9000\n";
+    y += "  wavin_ahc9000_id: wavin\n";
+    y += "  name: \"Zone " + std::to_string((int) ch) + " Floor Max Temperature\"\n";
+    y += "  channel: " + std::to_string((int) ch) + "\n";
+    y += "  type: floor_max_temperature\n";
+  }
+  return y;
+}
 
 std::string WavinAHC9000::get_yaml_climate_chunk(uint8_t start, uint8_t count) const {
   if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
@@ -760,6 +835,18 @@ std::string WavinAHC9000::get_yaml_floor_temperature_chunk(uint8_t start, uint8_
   std::vector<uint8_t> chs(this->yaml_floor_channels_.begin() + start, this->yaml_floor_channels_.begin() + end);
   return build_floor_temperature_yaml_for(chs);
 }
+std::string WavinAHC9000::get_yaml_floor_min_temperature_chunk(uint8_t start, uint8_t count) const {
+  if (start >= this->yaml_floor_channels_.size() || count == 0) return std::string("");
+  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_floor_channels_.size(), (size_t) start + count);
+  std::vector<uint8_t> chs(this->yaml_floor_channels_.begin() + start, this->yaml_floor_channels_.begin() + end);
+  return build_floor_min_temperature_yaml_for(chs);
+}
+std::string WavinAHC9000::get_yaml_floor_max_temperature_chunk(uint8_t start, uint8_t count) const {
+  if (start >= this->yaml_floor_channels_.size() || count == 0) return std::string("");
+  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_floor_channels_.size(), (size_t) start + count);
+  std::vector<uint8_t> chs(this->yaml_floor_channels_.begin() + start, this->yaml_floor_channels_.begin() + end);
+  return build_floor_max_temperature_yaml_for(chs);
+}
 
 void WavinAHC9000::publish_updates() {
   ESP_LOGV(TAG, "Publishing updates: %u single climates, %u group climates",
@@ -797,6 +884,27 @@ void WavinAHC9000::publish_updates() {
     auto it = this->channels_.find(ch);
     if (it != this->channels_.end() && it->second.has_floor_sensor) {
       float v = it->second.floor_temp_c;
+      if (!std::isnan(v)) s->publish_state(v);
+    }
+  }
+  // Publish floor limit sensors (read-only)
+  for (auto &kv : this->floor_min_temperature_sensors_) {
+    uint8_t ch = kv.first;
+    auto *s = kv.second;
+    if (!s) continue;
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end()) {
+      float v = it->second.floor_min_c;
+      if (!std::isnan(v)) s->publish_state(v);
+    }
+  }
+  for (auto &kv : this->floor_max_temperature_sensors_) {
+    uint8_t ch = kv.first;
+    auto *s = kv.second;
+    if (!s) continue;
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end()) {
+      float v = it->second.floor_max_c;
       if (!std::isnan(v)) s->publish_state(v);
     }
   }

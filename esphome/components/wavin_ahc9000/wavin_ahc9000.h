@@ -41,6 +41,9 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void add_channel_temperature_sensor(uint8_t ch, sensor::Sensor *s);
   void add_channel_comfort_setpoint_sensor(uint8_t ch, sensor::Sensor *s);
   void add_channel_floor_temperature_sensor(uint8_t ch, sensor::Sensor *s);
+  // New read-only floor limit sensors
+  void add_channel_floor_min_temperature_sensor(uint8_t ch, sensor::Sensor *s);
+  void add_channel_floor_max_temperature_sensor(uint8_t ch, sensor::Sensor *s);
   void add_active_channel(uint8_t ch);
 
   // Send commands
@@ -71,6 +74,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::string get_yaml_battery_chunk(uint8_t start, uint8_t count) const;
   std::string get_yaml_temperature_chunk(uint8_t start, uint8_t count) const;
   std::string get_yaml_floor_temperature_chunk(uint8_t start, uint8_t count) const;
+  std::string get_yaml_floor_min_temperature_chunk(uint8_t start, uint8_t count) const;
+  std::string get_yaml_floor_max_temperature_chunk(uint8_t start, uint8_t count) const;
   uint8_t get_yaml_active_count() const { return (uint8_t) this->yaml_active_channels_.size(); }
 
   // Data access
@@ -97,6 +102,9 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   struct ChannelState {
     float current_temp_c{NAN};
     float floor_temp_c{NAN};
+    // New read-only floor limits (Celsius)
+    float floor_min_c{NAN};
+    float floor_max_c{NAN};
     float setpoint_c{NAN};
     climate::ClimateMode mode{climate::CLIMATE_MODE_HEAT};
     climate::ClimateAction action{climate::CLIMATE_ACTION_OFF};
@@ -112,6 +120,9 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::map<uint8_t, sensor::Sensor *> battery_sensors_;
   std::map<uint8_t, sensor::Sensor *> temperature_sensors_;
   std::map<uint8_t, sensor::Sensor *> floor_temperature_sensors_;
+  // New read-only floor limit sensor maps
+  std::map<uint8_t, sensor::Sensor *> floor_min_temperature_sensors_;
+  std::map<uint8_t, sensor::Sensor *> floor_max_temperature_sensors_;
   std::map<uint8_t, sensor::Sensor *> comfort_setpoint_sensors_;
   binary_sensor::BinarySensor *yaml_ready_binary_sensor_{nullptr};
   text_sensor::TextSensor *yaml_text_sensor_{nullptr};
@@ -166,6 +177,9 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   static constexpr uint8_t PACKED_MANUAL_TEMPERATURE = 0x00;
   static constexpr uint8_t PACKED_STANDBY_TEMPERATURE = 0x04;
   static constexpr uint8_t PACKED_CONFIGURATION = 0x07;
+  // Inferred from field dump: floor min/max setpoints exposed in PACKED page
+  static constexpr uint8_t PACKED_FLOOR_MIN_TEMPERATURE = 0x03; // e.g. 0x0096 -> 15.0C
+  static constexpr uint8_t PACKED_FLOOR_MAX_TEMPERATURE = 0x05; // e.g. 0x00FA -> 25.0C
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_MASK = 0x07;
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_MANUAL = 0x00;
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_STANDBY = 0x01;
@@ -190,6 +204,14 @@ inline void WavinAHC9000::add_channel_comfort_setpoint_sensor(uint8_t ch, sensor
 
 inline void WavinAHC9000::add_channel_floor_temperature_sensor(uint8_t ch, sensor::Sensor *s) {
   this->floor_temperature_sensors_[ch] = s;
+}
+
+inline void WavinAHC9000::add_channel_floor_min_temperature_sensor(uint8_t ch, sensor::Sensor *s) {
+  this->floor_min_temperature_sensors_[ch] = s;
+}
+
+inline void WavinAHC9000::add_channel_floor_max_temperature_sensor(uint8_t ch, sensor::Sensor *s) {
+  this->floor_max_temperature_sensors_[ch] = s;
 }
 
 // numeric yaml_ready sensor removed

@@ -21,7 +21,7 @@ CONFIG_SCHEMA = sensor.sensor_schema().extend(
     {
         cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000),
         cv.Required(CONF_CHANNEL): cv.int_range(min=1, max=16),
-    cv.Required(CONF_TYPE): cv.one_of("battery", "temperature", "comfort_setpoint", "floor_temperature", lower=True),
+    cv.Required(CONF_TYPE): cv.one_of("battery", "temperature", "comfort_setpoint", "floor_temperature", "floor_min_temperature", "floor_max_temperature", lower=True),
     }
 )
 
@@ -46,6 +46,10 @@ async def to_code(config):
             cg.add(hub.add_channel_comfort_setpoint_sensor(config[CONF_CHANNEL], sens))
         elif config[CONF_TYPE] == "floor_temperature":
             cg.add(hub.add_channel_floor_temperature_sensor(config[CONF_CHANNEL], sens))
+        elif config[CONF_TYPE] == "floor_min_temperature":
+            cg.add(hub.add_channel_floor_min_temperature_sensor(config[CONF_CHANNEL], sens))
+        elif config[CONF_TYPE] == "floor_max_temperature":
+            cg.add(hub.add_channel_floor_max_temperature_sensor(config[CONF_CHANNEL], sens))
         else:
             cg.add(hub.add_channel_temperature_sensor(config[CONF_CHANNEL], sens))
     cg.add(hub.add_active_channel(config[CONF_CHANNEL]))
