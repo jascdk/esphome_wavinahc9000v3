@@ -311,6 +311,12 @@ api:
       then:
         - lambda: |-
             id(wavin).generate_yaml_suggestion();
+    - service: wavin_dump_channel_registers
+      variables:
+        channel: int
+      then:
+        - lambda: |-
+            id(wavin).dump_channel_floor_limits(channel);
         # Climate
         - if:
             condition:

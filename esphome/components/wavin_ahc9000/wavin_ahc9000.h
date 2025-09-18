@@ -56,6 +56,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void generate_yaml_suggestion();
   void set_yaml_ready_binary_sensor(binary_sensor::BinarySensor *s) { this->yaml_ready_binary_sensor_ = s; }
   void set_yaml_text_sensor(text_sensor::TextSensor *s) { this->yaml_text_sensor_ = s; }
+  // Debug helper to dump registers for a channel (to identify floor min/max addresses)
+  void dump_channel_floor_limits(uint8_t channel);
   // Accessor for last generated YAML (for HA notifications via lambda)
   std::string get_yaml_suggestion() const { return this->yaml_last_suggestion_; }
   std::string get_yaml_climate() const { return this->yaml_last_climate_; }
