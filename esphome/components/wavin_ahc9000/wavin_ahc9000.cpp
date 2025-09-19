@@ -276,145 +276,189 @@ void WavinAHC9000::add_active_channel(uint8_t ch) {
 // Repair functions removed; use normalize_channel_config via API service
 
 bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index, uint8_t count, std::vector<uint16_t> &out) {
-  uint8_t msg[8];
-  msg[0] = DEVICE_ADDR;
-  msg[1] = FC_READ;
-  msg[2] = category;
-  msg[3] = index;
-  msg[4] = page;
-  msg[5] = count;
-  uint16_t crc = crc16(msg, 6);
-  msg[6] = crc & 0xFF;
-  msg[7] = crc >> 8;
+  // Retry logic: attempt up to IO_RETRY_ATTEMPTS. First attempt failures are logged at DEBUG; only the
+  // final failed attempt escalates to WARN to reduce log noise from transient bus glitches.
+  for (uint8_t attempt = 0; attempt < IO_RETRY_ATTEMPTS; attempt++) {
+    uint8_t msg[8];
+    msg[0] = DEVICE_ADDR;
+    msg[1] = FC_READ;
+    msg[2] = category;
+    msg[3] = index;
+    msg[4] = page;
+    msg[5] = count;
+    uint16_t crc = crc16(msg, 6);
+    msg[6] = crc & 0xFF;
+    msg[7] = crc >> 8;
 
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
-  ESP_LOGD(TAG, "TX: addr=0x%02X fc=0x%02X cat=%u idx=%u page=%u cnt=%u", msg[0], msg[1], category, index, page, count);
-  this->write_array(msg, 8);
-  this->flush();
-  delayMicroseconds(250);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
+    if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+    ESP_LOGD(TAG, "TX: addr=0x%02X fc=0x%02X cat=%u idx=%u page=%u cnt=%u attempt=%u", msg[0], msg[1], category, index, page, count, (unsigned) attempt + 1);
+    this->write_array(msg, 8);
+    this->flush();
+    delayMicroseconds(250);
+    if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
 
-  // Receive response: [addr][fc][byte_count][payload...][crc_lo][crc_hi]
-  std::vector<uint8_t> buf;
-  uint32_t start = millis();
-  while (millis() - start < this->receive_timeout_ms_) {
-    while (this->available()) {
-      int c = this->read();
-      if (c < 0) break;
-      buf.push_back((uint8_t) c);
-      if (buf.size() >= 5) {
-        uint8_t expected = (uint8_t) (buf[2] + 5); // 3 header + payload + 2 crc
-        if (buf[0] == DEVICE_ADDR && buf[1] == FC_READ && buf.size() == expected) {
-          uint16_t rcrc = crc16(buf.data(), buf.size());
-          if (rcrc != 0) {
-            ESP_LOGW(TAG, "RX: CRC mismatch (len=%u)", (unsigned) buf.size());
-            return false;
+    std::vector<uint8_t> buf;
+    uint32_t start = millis();
+    while (millis() - start < this->receive_timeout_ms_) {
+      while (this->available()) {
+        int c = this->read();
+        if (c < 0) break;
+        buf.push_back((uint8_t) c);
+        if (buf.size() >= 5) {
+          uint8_t expected = (uint8_t) (buf[2] + 5);
+          if (buf[0] == DEVICE_ADDR && buf[1] == FC_READ && buf.size() == expected) {
+            uint16_t rcrc = crc16(buf.data(), buf.size());
+            if (rcrc != 0) {
+              // CRC mismatch: retry unless last attempt
+              if (attempt + 1 == IO_RETRY_ATTEMPTS) {
+                ESP_LOGW(TAG, "RX: CRC mismatch (len=%u) after %u attempts", (unsigned) buf.size(), (unsigned) IO_RETRY_ATTEMPTS);
+              } else {
+                ESP_LOGD(TAG, "RX: CRC mismatch attempt %u (len=%u) -> retry", (unsigned) attempt + 1, (unsigned) buf.size());
+              }
+              goto next_attempt; // break both loops, retry
+            }
+            uint8_t bytes = buf[2];
+            out.clear();
+            for (uint8_t i = 0; i + 1 < bytes; i += 2) {
+              uint16_t w = (uint16_t) (buf[3 + i] << 8) | buf[3 + i + 1];
+              out.push_back(w);
+            }
+            return true;
           }
-          uint8_t bytes = buf[2];
-          out.clear();
-          for (uint8_t i = 0; i + 1 < bytes; i += 2) {
-            uint16_t w = (uint16_t) (buf[3 + i] << 8) | buf[3 + i + 1];
-            out.push_back(w);
-          }
-          return true;
         }
       }
+      delay(1);
     }
-    delay(1);
+    // Timeout
+    if (attempt + 1 == IO_RETRY_ATTEMPTS) {
+      ESP_LOGW(TAG, "RX: timeout waiting for response after %u attempts (cat=%u idx=%u page=%u cnt=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page, count);
+    } else {
+      ESP_LOGD(TAG, "RX: timeout attempt %u (cat=%u idx=%u page=%u) -> retry", (unsigned) attempt + 1, category, index, page);
+    }
+  next_attempt:;
   }
-  ESP_LOGW(TAG, "RX: timeout waiting for response");
   return false;
 }
 
 bool WavinAHC9000::write_register(uint8_t category, uint8_t page, uint8_t index, uint16_t value) {
-  uint8_t msg[10];
-  msg[0] = DEVICE_ADDR;
-  msg[1] = FC_WRITE;
-  msg[2] = category;
-  msg[3] = index;
-  msg[4] = page;
-  msg[5] = 1;  // count
-  msg[6] = (uint8_t) (value >> 8);
-  msg[7] = (uint8_t) (value & 0xFF);
-  uint16_t crc = crc16(msg, 8);
-  msg[8] = (uint8_t) (crc & 0xFF);
-  msg[9] = (uint8_t) (crc >> 8);
+  // Similar retry strategy as read_registers() with severity gating.
+  for (uint8_t attempt = 0; attempt < IO_RETRY_ATTEMPTS; attempt++) {
+    uint8_t msg[10];
+    msg[0] = DEVICE_ADDR;
+    msg[1] = FC_WRITE;
+    msg[2] = category;
+    msg[3] = index;
+    msg[4] = page;
+    msg[5] = 1;  // count
+    msg[6] = (uint8_t) (value >> 8);
+    msg[7] = (uint8_t) (value & 0xFF);
+    uint16_t crc = crc16(msg, 8);
+    msg[8] = (uint8_t) (crc & 0xFF);
+    msg[9] = (uint8_t) (crc >> 8);
 
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
-  ESP_LOGD(TAG, "TX-WR: cat=%u idx=%u page=%u val=0x%04X", category, index, page, (unsigned) value);
-  this->write_array(msg, 10);
-  this->flush();
-  delayMicroseconds(250);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
+    if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+    ESP_LOGD(TAG, "TX-WR: cat=%u idx=%u page=%u val=0x%04X attempt=%u", category, index, page, (unsigned) value, (unsigned) attempt + 1);
+    this->write_array(msg, 10);
+    this->flush();
+    delayMicroseconds(250);
+    if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
 
-  // Read ack
-  std::vector<uint8_t> buf;
-  uint32_t start = millis();
-  while (millis() - start < this->receive_timeout_ms_) {
-    while (this->available()) {
-      int c = this->read();
-      if (c < 0) break;
-      buf.push_back((uint8_t) c);
-      if (buf.size() >= 5) {
-        uint8_t expected = (uint8_t) (buf[2] + 5);
-        if (buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE && buf.size() == expected) {
-          uint16_t rcrc = crc16(buf.data(), buf.size());
-          bool ok = (rcrc == 0);
-          ESP_LOGD(TAG, "ACK-WR: %s", ok ? "OK" : "BAD-CRC");
-          return ok;
+    std::vector<uint8_t> buf;
+    uint32_t start = millis();
+    while (millis() - start < this->receive_timeout_ms_) {
+      while (this->available()) {
+        int c = this->read();
+        if (c < 0) break;
+        buf.push_back((uint8_t) c);
+        if (buf.size() >= 5) {
+          uint8_t expected = (uint8_t) (buf[2] + 5);
+          if (buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE && buf.size() == expected) {
+            uint16_t rcrc = crc16(buf.data(), buf.size());
+            bool ok = (rcrc == 0);
+            if (!ok) {
+              if (attempt + 1 == IO_RETRY_ATTEMPTS) {
+                ESP_LOGW(TAG, "ACK-WR: CRC mismatch after %u attempts (cat=%u idx=%u page=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
+              } else {
+                ESP_LOGD(TAG, "ACK-WR: CRC mismatch attempt %u -> retry", (unsigned) attempt + 1);
+              }
+              goto next_wr_attempt;
+            }
+            ESP_LOGD(TAG, "ACK-WR: OK");
+            return true;
+          }
         }
       }
+      delay(1);
     }
-    delay(1);
+    if (attempt + 1 == IO_RETRY_ATTEMPTS) {
+      ESP_LOGW(TAG, "ACK-WR: timeout after %u attempts (cat=%u idx=%u page=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
+    } else {
+      ESP_LOGD(TAG, "ACK-WR: timeout attempt %u (cat=%u idx=%u page=%u) -> retry", (unsigned) attempt + 1, category, index, page);
+    }
+  next_wr_attempt:;
   }
-  ESP_LOGW(TAG, "ACK-WR: timeout");
   return false;
 }
 
 bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t index, uint16_t and_mask, uint16_t or_mask) {
-  uint8_t msg[12];
-  msg[0] = DEVICE_ADDR;
-  msg[1] = FC_WRITE_MASKED;
-  msg[2] = category;
-  msg[3] = index;
-  msg[4] = page;
-  msg[5] = 1;  // count
-  msg[6] = (uint8_t) (and_mask >> 8);
-  msg[7] = (uint8_t) (and_mask & 0xFF);
-  msg[8] = (uint8_t) (or_mask >> 8);
-  msg[9] = (uint8_t) (or_mask & 0xFF);
-  uint16_t crc = crc16(msg, 10);
-  msg[10] = (uint8_t) (crc & 0xFF);
-  msg[11] = (uint8_t) (crc >> 8);
+  // Similar retry strategy as write_register(); reduces spurious WARN logs.
+  for (uint8_t attempt = 0; attempt < IO_RETRY_ATTEMPTS; attempt++) {
+    uint8_t msg[12];
+    msg[0] = DEVICE_ADDR;
+    msg[1] = FC_WRITE_MASKED;
+    msg[2] = category;
+    msg[3] = index;
+    msg[4] = page;
+    msg[5] = 1;  // count
+    msg[6] = (uint8_t) (and_mask >> 8);
+    msg[7] = (uint8_t) (and_mask & 0xFF);
+    msg[8] = (uint8_t) (or_mask >> 8);
+    msg[9] = (uint8_t) (or_mask & 0xFF);
+    uint16_t crc = crc16(msg, 10);
+    msg[10] = (uint8_t) (crc & 0xFF);
+    msg[11] = (uint8_t) (crc >> 8);
 
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
-  ESP_LOGD(TAG, "TX-WM: cat=%u idx=%u page=%u and=0x%04X or=0x%04X", category, index, page, (unsigned) and_mask, (unsigned) or_mask);
-  this->write_array(msg, 12);
-  this->flush();
-  delayMicroseconds(250);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
+    if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+    ESP_LOGD(TAG, "TX-WM: cat=%u idx=%u page=%u and=0x%04X or=0x%04X attempt=%u", category, index, page, (unsigned) and_mask, (unsigned) or_mask, (unsigned) attempt + 1);
+    this->write_array(msg, 12);
+    this->flush();
+    delayMicroseconds(250);
+    if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
 
-  // Read ack
-  std::vector<uint8_t> buf;
-  uint32_t start = millis();
-  while (millis() - start < this->receive_timeout_ms_) {
-    while (this->available()) {
-      int c = this->read();
-      if (c < 0) break;
-      buf.push_back((uint8_t) c);
-      if (buf.size() >= 5) {
-        uint8_t expected = (uint8_t) (buf[2] + 5);
-        if (buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE_MASKED && buf.size() == expected) {
-          uint16_t rcrc = crc16(buf.data(), buf.size());
-          bool ok = (rcrc == 0);
-          ESP_LOGD(TAG, "ACK-WM: %s", ok ? "OK" : "BAD-CRC");
-          return ok;
+    std::vector<uint8_t> buf;
+    uint32_t start = millis();
+    while (millis() - start < this->receive_timeout_ms_) {
+      while (this->available()) {
+        int c = this->read();
+        if (c < 0) break;
+        buf.push_back((uint8_t) c);
+        if (buf.size() >= 5) {
+          uint8_t expected = (uint8_t) (buf[2] + 5);
+          if (buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE_MASKED && buf.size() == expected) {
+            uint16_t rcrc = crc16(buf.data(), buf.size());
+            bool ok = (rcrc == 0);
+            if (!ok) {
+              if (attempt + 1 == IO_RETRY_ATTEMPTS) {
+                ESP_LOGW(TAG, "ACK-WM: CRC mismatch after %u attempts (cat=%u idx=%u page=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
+              } else {
+                ESP_LOGD(TAG, "ACK-WM: CRC mismatch attempt %u -> retry", (unsigned) attempt + 1);
+              }
+              goto next_wm_attempt;
+            }
+            ESP_LOGD(TAG, "ACK-WM: OK");
+            return true;
+          }
         }
       }
+      delay(1);
     }
-    delay(1);
+    if (attempt + 1 == IO_RETRY_ATTEMPTS) {
+      ESP_LOGW(TAG, "ACK-WM: timeout after %u attempts (cat=%u idx=%u page=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
+    } else {
+      ESP_LOGD(TAG, "ACK-WM: timeout attempt %u (cat=%u idx=%u page=%u) -> retry", (unsigned) attempt + 1, category, index, page);
+    }
+  next_wm_attempt:;
   }
-  ESP_LOGW(TAG, "ACK-WM: timeout");
   return false;
 }
 
