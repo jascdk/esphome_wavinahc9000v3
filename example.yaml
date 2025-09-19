@@ -2,10 +2,6 @@ esphome:
   name: wavinahc9000v3
   friendly_name: wavinahc9000v3
 
-substitutions:
-  # Toggle YAML generator helpers (on = show chunk text sensors + services, off = hide)
-  YAML_GEN_STATE: on  # change to off after initial onboarding
-
 esp32:
   board: esp32dev
   framework:
@@ -41,12 +37,14 @@ wavin_ahc9000:
   # update_interval: 2s
   allow_mode_writes: false
 
-# Onboarding helper packages (substitution-based toggle)
-# When YAML_GEN_STATE=on we include the generator; set to off afterwards to remove the clutter.
+# Onboarding helper packages (manual enable/disable)
+# Uncomment the yaml_generator line while you want the chunk text sensors + services.
+# Comment it again later to keep the runtime entity list small.
+# Uncomment wavin_debug for the register dump service if needed long-term.
 packages:
-  yaml_generator: !include packages/yaml_generator.${YAML_GEN_STATE}.yaml
-  # Uncomment the debug services include if you want the register dump service permanently
-  wavin_debug: !include packages/wavin_debug_services.yaml
+  # yaml_generator: !include packages/yaml_generator.on.yaml   # enable generator
+  # yaml_generator: !include packages/yaml_generator.off.yaml  # (placeholder, normally leave both commented when disabling)
+  # wavin_debug: !include packages/wavin_debug_services.yaml
 
 climate:
   - platform: wavin_ahc9000

@@ -145,14 +145,57 @@ This is an independent, community-driven integration. Use at your own risk.
 
 ## YAML generator and HA Jinja stitching
 
-This component can generate suggested YAML for discovered channels. Because Home Assistant limits text sensor sizes, the suggestion is also exposed as chunked text sensors (each containing only entity blocks, without section headers). Use the included `jinjatemplate.txt` to stitch them back together in Home Assistant.
+This component can generate suggested YAML for discovered channels. Because Home Assistant limits text sensor sizes, the suggestion is also exposed as chunked text sensors (each containing only entity blocks, without section headers). Use the included `jinjatemplate.txt` to stitch them back together.
 
-Quick steps:
-- In ESPHome, call the service `esphome.wavin_publish_yaml_text_sensors` to populate chunk sensors.
-- In Home Assistant Developer Tools → States, verify sensors like `sensor.wavin_yaml_climate_1..8`, `sensor.wavin_yaml_battery_1..8`, `sensor.wavin_yaml_temperature_1..8` have content.
-- Open `jinjatemplate.txt`, copy the “All-in-one” Jinja, and paste it into a Jinja-capable place (template editor, script/automation message, or notification). It adds `climate:` and `sensor:` headers and correct indentation.
+### Enabling the generator (manual include)
 
-Note: The single `text_sensor` named "Wavin YAML Suggestion" still publishes the full YAML (with headers) for simple copy/paste, but large setups may be truncated in HA. The chunked approach avoids this by splitting into smaller pieces.
+Files involved:
+- `packages/yaml_generator.on.yaml`  (full set of text sensors + services)
+- `packages/yaml_generator.off.yaml` (empty stub – mostly for clarity)
+- `packages/yaml_generator.yaml`     (documentation only)
+
+In your node YAML add (uncomment while needed):
+
+```yaml
+packages:
+  # Enable during onboarding to generate YAML suggestions
+  yaml_generator: !include packages/yaml_generator.on.yaml
+  # Optional: debug register dump service
+  # wavin_debug: !include packages/wavin_debug_services.yaml
+```
+
+After you've copied the generated YAML into your permanent config, simply comment the `yaml_generator` line again to remove the helper entities and services.
+
+### Generating & collecting the YAML
+1. Recompile & upload with the generator enabled.
+2. In Home Assistant call the service: `esphome.<node_name>_wavin_publish_yaml_text_sensors` (or first `wavin_generate_yaml`).
+3. Inspect sensors:
+   - `sensor.wavin_yaml_climate_1` .. `sensor.wavin_yaml_climate_8`
+   - `sensor.wavin_yaml_comfort_climate_1` .. (if comfort climates apply)
+   - `sensor.wavin_yaml_temperature_1` .. `sensor.wavin_yaml_temperature_8`
+   - `sensor.wavin_yaml_battery_1` .. `sensor.wavin_yaml_battery_8`
+   - `sensor.wavin_yaml_floor_temperature_1` .. (only if floor probes detected)
+4. Optionally view the single full suggestion sensor: `sensor.wavin_yaml_suggestion` (may be truncated for very large outputs in HA – use chunks when in doubt).
+5. Open `jinjatemplate.txt` and use the “All-in-one” Jinja macro to stitch chunks back into a cohesive YAML block (adds section headers + indentation).
+
+### Why no substitution toggle?
+Early versions used a substitution (`YAML_GEN_STATE`) to switch between on/off files. Remote GitHub package includes cannot use substitutions in the `files:` list, leading to confusion. The project now favors a simple comment/uncomment pattern for reliability both locally and in remote includes.
+
+### Floor probe driven additions
+If at least one floor probe is plausibly detected (>1.0°C and <90°C after startup), the generator adds the relevant floor temperature sensor entries. If you trigger the service very early and they are missing, trigger again later.
+
+### Readiness indicator
+You can optionally add a `yaml_ready` binary sensor to know when discovery has progressed enough to get stable YAML suggestions:
+
+```yaml
+binary_sensor:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    type: yaml_ready
+    name: "Wavin YAML Ready"
+```
+
+Once you have migrated the suggested YAML entities you want, disable the generator include to declutter.
 
 ### Comfort Setpoint Read-Only Sensor
 
