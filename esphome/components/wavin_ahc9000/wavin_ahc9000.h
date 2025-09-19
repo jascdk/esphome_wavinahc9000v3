@@ -188,6 +188,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   //   PACKED[11] = 0x00FF (255 -> 25.5C) => MAX
   static constexpr uint8_t PACKED_FLOOR_MIN_TEMPERATURE = 0x0A; // 21.5C example
   static constexpr uint8_t PACKED_FLOOR_MAX_TEMPERATURE = 0x0B; // 25.5C example
+  // Note: PACKED_FLOOR_MIN_TEMPERATURE and PACKED_FLOOR_MAX_TEMPERATURE are contiguous; reads
+  // have been consolidated (count=2 starting at MIN) to reduce RS485 transactions.
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_MASK = 0x07;
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_MANUAL = 0x00;
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_STANDBY = 0x01;

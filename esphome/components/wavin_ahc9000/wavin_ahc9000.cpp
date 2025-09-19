@@ -74,12 +74,10 @@ void WavinAHC9000::update() {
     if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
       st.setpoint_c = this->raw_to_c(regs[0]);
     }
-    // Read floor min/max (read-only) during urgent refresh
-    if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MIN_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+    // Read floor min/max (read-only) during urgent refresh in one combined request (reduces bus load)
+    if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MIN_TEMPERATURE, 2, regs) && regs.size() >= 2) {
       st.floor_min_c = this->raw_to_c(regs[0]);
-    }
-    if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MAX_TEMPERATURE, 1, regs) && regs.size() >= 1) {
-      st.floor_max_c = this->raw_to_c(regs[0]);
+      st.floor_max_c = this->raw_to_c(regs[1]);
     }
     if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
       bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
@@ -160,12 +158,10 @@ void WavinAHC9000::update() {
           break;
         }
         case 3: {
-          // Read floor min/max too (read-only)
-          if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MIN_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+          // Read floor min+max together (contiguous) to reduce transactions
+          if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MIN_TEMPERATURE, 2, regs) && regs.size() >= 2) {
             st.floor_min_c = this->raw_to_c(regs[0]);
-          }
-          if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MAX_TEMPERATURE, 1, regs) && regs.size() >= 1) {
-            st.floor_max_c = this->raw_to_c(regs[0]);
+            st.floor_max_c = this->raw_to_c(regs[1]);
           }
           if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
             bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
@@ -597,12 +593,10 @@ void WavinAHC9000::generate_yaml_suggestion() {
         if (this->read_registers(CAT_PACKED, page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
           st.setpoint_c = this->raw_to_c(regs[0]);
         }
-        // Floor min/max (read-only)
-        if (this->read_registers(CAT_PACKED, page, PACKED_FLOOR_MIN_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+        // Floor min/max (read-only) combined into one read (contiguous indices)
+        if (this->read_registers(CAT_PACKED, page, PACKED_FLOOR_MIN_TEMPERATURE, 2, regs) && regs.size() >= 2) {
           st.floor_min_c = this->raw_to_c(regs[0]);
-        }
-        if (this->read_registers(CAT_PACKED, page, PACKED_FLOOR_MAX_TEMPERATURE, 1, regs) && regs.size() >= 1) {
-          st.floor_max_c = this->raw_to_c(regs[0]);
+          st.floor_max_c = this->raw_to_c(regs[1]);
         }
         // Try to read elements block to surface air/floor temps and detect floor probe immediately
         uint8_t elem_page = (uint8_t) (primary_index - 1);
