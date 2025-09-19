@@ -1032,17 +1032,48 @@ void WavinZoneClimate::control(const climate::ClimateCall &call) {
 
   // If comfort climate is used, expose floor min/max through target_temperature_low/high
   if (this->use_floor_temperature_ && this->single_channel_set_) {
-    if (call.get_target_temperature_low().has_value()) {
-      float lo = *call.get_target_temperature_low();
-      ESP_LOGD(TAG, "CTRL: floor min=%.1fC for %s", lo, this->get_name().c_str());
-      this->parent_->write_channel_floor_min_temperature(this->single_channel_, lo);
-      // optimistic update
-      // Note: traits() will reflect new limits on next update/publish
+    bool has_lo = call.get_target_temperature_low().has_value();
+    bool has_hi = call.get_target_temperature_high().has_value();
+    float current_lo = this->parent_->get_channel_floor_min_temp(this->single_channel_);
+    float current_hi = this->parent_->get_channel_floor_max_temp(this->single_channel_);
+    float new_lo = current_lo;
+    float new_hi = current_hi;
+    if (has_lo) new_lo = *call.get_target_temperature_low();
+    if (has_hi) new_hi = *call.get_target_temperature_high();
+    auto round05 = [](float v) -> float { return std::round(v * 2.0f) / 2.0f; };
+    // Clamp to global sane bounds first, then round to 0.5°C step
+    if (!std::isnan(new_lo)) {
+      if (new_lo < 5.0f) new_lo = 5.0f;
+      if (new_lo > 35.0f) new_lo = 35.0f;
+      new_lo = round05(new_lo);
     }
-    if (call.get_target_temperature_high().has_value()) {
-      float hi = *call.get_target_temperature_high();
-      ESP_LOGD(TAG, "CTRL: floor max=%.1fC for %s", hi, this->get_name().c_str());
-      this->parent_->write_channel_floor_max_temperature(this->single_channel_, hi);
+    if (!std::isnan(new_hi)) {
+      if (new_hi < 5.0f) new_hi = 5.0f;
+      if (new_hi > 35.0f) new_hi = 35.0f;
+      new_hi = round05(new_hi);
+    }
+    // Enforce at least 1.0C separation if both present (or infer using the unchanged side)
+    if (!std::isnan(new_lo) && !std::isnan(new_hi)) {
+      if (new_hi < new_lo + 1.0f) {
+        if (has_hi && !has_lo) {
+          new_lo = round05(new_hi - 1.0f);
+        } else {
+          new_hi = round05(new_lo + 1.0f);
+        }
+      }
+    } else if (!std::isnan(new_lo) && std::isnan(new_hi) && !std::isnan(current_hi)) {
+      if (current_hi < new_lo + 1.0f) new_lo = round05(current_hi - 1.0f);
+    } else if (!std::isnan(new_hi) && std::isnan(new_lo) && !std::isnan(current_lo)) {
+      if (new_hi < current_lo + 1.0f) new_hi = round05(current_lo + 1.0f);
+    }
+    // Write only the values that actually changed after adjustment
+    if (!std::isnan(new_lo) && (std::isnan(current_lo) || std::fabs(new_lo - current_lo) > 0.049f)) {
+      ESP_LOGD(TAG, "CTRL: floor min(write)=%.1fC (req%s) for %s", new_lo, has_lo?" set":" implied", this->get_name().c_str());
+      this->parent_->write_channel_floor_min_temperature(this->single_channel_, new_lo);
+    }
+    if (!std::isnan(new_hi) && (std::isnan(current_hi) || std::fabs(new_hi - current_hi) > 0.049f)) {
+      ESP_LOGD(TAG, "CTRL: floor max(write)=%.1fC (req%s) for %s", new_hi, has_hi?" set":" implied", this->get_name().c_str());
+      this->parent_->write_channel_floor_max_temperature(this->single_channel_, new_hi);
     }
   }
 
