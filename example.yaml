@@ -37,13 +37,11 @@ wavin_ahc9000:
   # update_interval: 2s
   allow_mode_writes: false
 
-# Onboarding helper packages (manual enable/disable)
-# Uncomment the yaml_generator line while you want the chunk text sensors + services.
+# Onboarding helper package (manual enable/disable)
+# Uncomment the yaml_generator include while you want the YAML suggestion sensors & services.
 # Comment it again later to keep the runtime entity list small.
-# Uncomment wavin_debug for the register dump service if needed long-term.
 packages:
-  # yaml_generator: !include packages/yaml_generator.on.yaml   # enable generator
-  # yaml_generator: !include packages/yaml_generator.off.yaml  # (placeholder, normally leave both commented when disabling)
+  # yaml_generator: !include packages/yaml_generator.yaml
   # wavin_debug: !include packages/wavin_debug_services.yaml
 
 climate:
