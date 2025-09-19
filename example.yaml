@@ -2,6 +2,10 @@ esphome:
   name: wavinahc9000v3
   friendly_name: wavinahc9000v3
 
+substitutions:
+  # Toggle YAML generator helpers (on = show chunk text sensors + services, off = hide)
+  YAML_GEN_STATE: on  # change to off after initial onboarding
+
 esp32:
   board: esp32dev
   framework:
@@ -37,22 +41,12 @@ wavin_ahc9000:
   # update_interval: 2s
   allow_mode_writes: false
 
-# Onboarding helpers (optional): include the chunked YAML tools package
-# This adds text sensors and services to generate/publish YAML chunks for HA Jinja stitching.
-# Enable during setup, then remove to keep your config clean.
-#
-# Option A — include from GitHub (recommended):
-# packages:
-#   wavin_yaml_tools:
-#     url: https://github.com/heinekmadsen/esphome_wavinahc9000v3
-#     ref: main     # or switch to 'restart' while testing this branch
-#     files:
-#       - packages/wavin_yaml_tools.yaml
-#     refresh: 1d
-#
-# Option B — include local file (if you cloned the repo):
-# packages:
-#   wavin_yaml_tools: !include packages/wavin_yaml_tools.yaml
+# Onboarding helper packages (substitution-based toggle)
+# When YAML_GEN_STATE=on we include the generator; set to off afterwards to remove the clutter.
+packages:
+  yaml_generator: !include packages/yaml_generator.${YAML_GEN_STATE}.yaml
+  # Uncomment the debug services include if you want the register dump service permanently
+  wavin_debug: !include packages/wavin_debug_services.yaml
 
 climate:
   - platform: wavin_ahc9000

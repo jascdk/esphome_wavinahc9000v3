@@ -1,0 +1,71 @@
+# YAML generator: chunked YAML suggestion text sensors + related services
+###############################################
+# yaml_generator.yaml (wrapper / instructions)
+#
+# The actual YAML generator content has been split into two state files:
+#   yaml_generator.on.yaml  - full feature set (text sensors + services)
+#   yaml_generator.off.yaml - empty stub to disable generator after onboarding
+#
+# To use, in your main ESPHome node config add:
+#
+# substitutions:
+#   YAML_GEN_STATE: on   # or off
+#
+# packages:
+#   yaml_generator: !include packages/yaml_generator.${YAML_GEN_STATE}.yaml
+#
+# You can delete this wrapper if you don't need the reminder.
+# It is left as documentation so people discovering the repo see how to enable it.
+###############################################
+
+# (No active content here intentionally.)
+        - lambda: |-
+            id(wavin).generate_yaml_suggestion();
+    - service: wavin_publish_yaml_text_sensors
+      then:
+        - lambda: |-
+            id(wavin).generate_yaml_suggestion();
+            id(yaml_climate_1).publish_state(id(wavin).get_yaml_climate_chunk(0, 2));
+            id(yaml_climate_2).publish_state(id(wavin).get_yaml_climate_chunk(2, 2));
+            id(yaml_climate_3).publish_state(id(wavin).get_yaml_climate_chunk(4, 2));
+            id(yaml_climate_4).publish_state(id(wavin).get_yaml_climate_chunk(6, 2));
+            id(yaml_climate_5).publish_state(id(wavin).get_yaml_climate_chunk(8, 2));
+            id(yaml_climate_6).publish_state(id(wavin).get_yaml_climate_chunk(10, 2));
+            id(yaml_climate_7).publish_state(id(wavin).get_yaml_climate_chunk(12, 2));
+            id(yaml_climate_8).publish_state(id(wavin).get_yaml_climate_chunk(14, 2));
+            id(yaml_comfort_climate_1).publish_state(id(wavin).get_yaml_comfort_climate_chunk(0, 2));
+            id(yaml_comfort_climate_2).publish_state(id(wavin).get_yaml_comfort_climate_chunk(2, 2));
+            id(yaml_comfort_climate_3).publish_state(id(wavin).get_yaml_comfort_climate_chunk(4, 2));
+            id(yaml_comfort_climate_4).publish_state(id(wavin).get_yaml_comfort_climate_chunk(6, 2));
+            id(yaml_comfort_climate_5).publish_state(id(wavin).get_yaml_comfort_climate_chunk(8, 2));
+            id(yaml_comfort_climate_6).publish_state(id(wavin).get_yaml_comfort_climate_chunk(10, 2));
+            id(yaml_comfort_climate_7).publish_state(id(wavin).get_yaml_comfort_climate_chunk(12, 2));
+            id(yaml_comfort_climate_8).publish_state(id(wavin).get_yaml_comfort_climate_chunk(14, 2));
+            id(yaml_battery_1).publish_state(id(wavin).get_yaml_battery_chunk(0, 2));
+            id(yaml_battery_2).publish_state(id(wavin).get_yaml_battery_chunk(2, 2));
+            id(yaml_battery_3).publish_state(id(wavin).get_yaml_battery_chunk(4, 2));
+            id(yaml_battery_4).publish_state(id(wavin).get_yaml_battery_chunk(6, 2));
+            id(yaml_battery_5).publish_state(id(wavin).get_yaml_battery_chunk(8, 2));
+            id(yaml_battery_6).publish_state(id(wavin).get_yaml_battery_chunk(10, 2));
+            id(yaml_battery_7).publish_state(id(wavin).get_yaml_battery_chunk(12, 2));
+            id(yaml_battery_8).publish_state(id(wavin).get_yaml_battery_chunk(14, 2));
+            id(yaml_temperature_1).publish_state(id(wavin).get_yaml_temperature_chunk(0, 2));
+            id(yaml_temperature_2).publish_state(id(wavin).get_yaml_temperature_chunk(2, 2));
+            id(yaml_temperature_3).publish_state(id(wavin).get_yaml_temperature_chunk(4, 2));
+            id(yaml_temperature_4).publish_state(id(wavin).get_yaml_temperature_chunk(6, 2));
+            id(yaml_temperature_5).publish_state(id(wavin).get_yaml_temperature_chunk(8, 2));
+            id(yaml_temperature_6).publish_state(id(wavin).get_yaml_temperature_chunk(10, 2));
+            id(yaml_temperature_7).publish_state(id(wavin).get_yaml_temperature_chunk(12, 2));
+            id(yaml_temperature_8).publish_state(id(wavin).get_yaml_temperature_chunk(14, 2));
+            id(yaml_floor_temperature_1).publish_state(id(wavin).get_yaml_floor_temperature_chunk(0, 2));
+            id(yaml_floor_temperature_2).publish_state(id(wavin).get_yaml_floor_temperature_chunk(2, 2));
+            id(yaml_floor_temperature_3).publish_state(id(wavin).get_yaml_floor_temperature_chunk(4, 2));
+            id(yaml_floor_temperature_4).publish_state(id(wavin).get_yaml_floor_temperature_chunk(6, 2));
+            id(yaml_floor_temperature_5).publish_state(id(wavin).get_yaml_floor_temperature_chunk(8, 2));
+            id(yaml_floor_temperature_6).publish_state(id(wavin).get_yaml_floor_temperature_chunk(10, 2));
+            id(yaml_floor_temperature_7).publish_state(id(wavin).get_yaml_floor_temperature_chunk(12, 2));
+            id(yaml_floor_temperature_8).publish_state(id(wavin).get_yaml_floor_temperature_chunk(14, 2));
+    - service: wavin_notify_yaml_chunks
+      then:
+        - lambda: |-
+            id(wavin).generate_yaml_suggestion();

@@ -1,0 +1,11 @@
+# yaml_generator.off.yaml - DISABLED placeholder for YAML generator
+# This file intentionally defines no text sensors or services to reduce clutter
+# once onboarding is complete. Switch between on/off using a substitution, e.g.:
+#
+# substitutions:
+#   YAML_GEN_STATE: off  # change to on when you need the generator
+#
+# packages:
+#   yaml_generator: !include packages/yaml_generator.${YAML_GEN_STATE}.yaml
+#
+# (You still keep the debug services file separately if desired.)

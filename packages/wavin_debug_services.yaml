@@ -1,0 +1,11 @@
+# Debug-only services for Wavin AHC9000 (separated from YAML generator)
+
+api:
+  services:
+    - service: wavin_dump_channel_registers
+      variables:
+        channel: int
+      then:
+        - lambda: |-
+            id(wavin).dump_channel_floor_limits(channel);
+        # Optional: you can still trigger notifications manually using separate automations if desired.
