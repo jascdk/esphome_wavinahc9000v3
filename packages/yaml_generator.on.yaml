@@ -1,8 +1,0 @@
-###############################################
-# Deprecated file
-# Consolidated into 'yaml_generator.yaml'. Keep this file so existing
-# references do not break; it now simply includes the consolidated one.
-###############################################
-
-packages:
-  yaml_generator: !include packages/yaml_generator.yaml

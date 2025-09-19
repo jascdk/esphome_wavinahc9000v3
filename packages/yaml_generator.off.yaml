@@ -1,7 +1,0 @@
-###############################################
-# Deprecated file
-# The on/off split was removed. Use 'yaml_generator.yaml' directly.
-# Left in place to avoid 404s for older configs.
-###############################################
-
-# Empty stub on purpose.

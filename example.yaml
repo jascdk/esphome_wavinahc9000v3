@@ -66,10 +66,6 @@ sensor:
     channel: 1
     type: temperature
 
-# NOTE: The text_sensor/api helpers below are also provided by the optional package
-# at packages/wavin_yaml_tools.yaml. If you enable the package, you can remove
-# the following text_sensor/api sections.
-
 api:
   services:
     - service: wavin_strict_heat

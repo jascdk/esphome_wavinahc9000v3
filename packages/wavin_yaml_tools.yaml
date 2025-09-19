@@ -1,5 +1,0 @@
-## DEPRECATED
-# This file has been split into:
-#   packages/yaml_generator.yaml       (YAML chunk text_sensors + publish services)
-#   packages/wavin_debug_services.yaml (debug dump service)
-# Remove this file from your config and include the two new files as needed.
