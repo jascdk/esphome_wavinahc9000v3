@@ -725,13 +725,11 @@ void WavinAHC9000::generate_yaml_suggestion() {
   out += "\n" + yaml_batt + "\n" + yaml_temp;
   if (any_comfort) out += "\n" + yaml_comfort_climate;
 
-  // Build cached floor channel list for chunk helper usage
+  // Build cached floor channel list for comfort chunk helpers (just channels with floor sensors)
   this->yaml_floor_channels_.clear();
-  if (any_floor) {
-    for (auto ch : active) {
-      auto it = this->channels_.find(ch);
-      if (it != this->channels_.end() && it->second.has_floor_sensor) this->yaml_floor_channels_.push_back(ch);
-    }
+  for (auto ch : active) {
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end() && it->second.has_floor_sensor) this->yaml_floor_channels_.push_back(ch);
   }
 
   // Save last YAML and publish to optional text sensor (HA may truncate state >255 chars)
