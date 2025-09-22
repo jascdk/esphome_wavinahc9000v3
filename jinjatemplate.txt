@@ -10,6 +10,11 @@ Prerequisites
 All-in-one (climate + sensor)
 {% raw %}
 {# Gather chunk sensors and indent entity blocks #}
+{% set all_climates = states.sensor
+  | selectattr('entity_id','equalto','sensor.wavin_yaml_all_climates')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | list %}
 {% set climates = states.sensor
   | selectattr('entity_id','search','_yaml_climate_')
   | selectattr('state','ne','unknown')
@@ -36,6 +41,9 @@ All-in-one (climate + sensor)
   | selectattr('state','ne','unavailable')
   | sort(attribute='entity_id') | list %}
 
+{% if all_climates|length == 1 and all_climates[0].state | trim %}
+{{ all_climates[0].state | trim }}
+{% else %}
 climate:
 {% for s in climates %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
@@ -47,6 +55,7 @@ climate:
   # Group climates
   {{ (group[0].state | trim | replace('\n', '\n  ')) }}
 {% endif %}
+{% endif %}
 
 sensor:
 {% for s in batteries %}
@@ -57,8 +66,13 @@ sensor:
 {% endfor %}
 {% endraw %}
 
-Climate-only (includes optional comfort + group)
+Climate-only (includes optional comfort + group; prefers unified if available)
 {% raw %}
+{% set all_climates = states.sensor
+  | selectattr('entity_id','equalto','sensor.wavin_yaml_all_climates')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | list %}
 {% set climates = states.sensor
   | selectattr('entity_id','search','_yaml_climate_')
   | selectattr('state','ne','unknown')
@@ -75,6 +89,9 @@ Climate-only (includes optional comfort + group)
   | selectattr('state','ne','unavailable')
   | list %}
 
+{% if all_climates|length == 1 and all_climates[0].state | trim %}
+{{ all_climates[0].state | trim }}
+{% else %}
 climate:
 {% for s in climates %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
@@ -85,6 +102,7 @@ climate:
 {% if group|length == 1 and group[0].state | trim %}
   # Group climates
   {{ (group[0].state | trim | replace('\n', '\n  ')) }}
+{% endif %}
 {% endif %}
 {% endraw %}
 

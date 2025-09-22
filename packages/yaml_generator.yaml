@@ -18,6 +18,12 @@ text_sensor:
     wavin_ahc9000_id: wavin
     name: "Wavin YAML Suggestion"
   - platform: template
+    id: yaml_all_climates
+    name: "Wavin YAML All Climates"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_all_climates();
+  - platform: template
     id: yaml_group_climate
     name: "Wavin YAML Group Climates"
     update_interval: never
@@ -259,6 +265,7 @@ api:
             id(yaml_climate_7).publish_state(id(wavin).get_yaml_climate_chunk(12, 2));
             id(yaml_climate_8).publish_state(id(wavin).get_yaml_climate_chunk(14, 2));
             id(yaml_group_climate).publish_state(id(wavin).get_yaml_group_climate());
+            id(yaml_all_climates).publish_state(id(wavin).get_yaml_all_climates());
             id(yaml_group_climate_chunk_1).publish_state(id(wavin).get_yaml_group_climate_chunk(0, 2));
             id(yaml_group_climate_chunk_2).publish_state(id(wavin).get_yaml_group_climate_chunk(2, 2));
             id(yaml_group_climate_chunk_3).publish_state(id(wavin).get_yaml_group_climate_chunk(4, 2));

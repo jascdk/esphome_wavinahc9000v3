@@ -742,6 +742,27 @@ void WavinAHC9000::generate_yaml_suggestion() {
   this->yaml_last_temperature_ = yaml_temp;
   this->yaml_last_floor_temperature_.clear();
   this->yaml_last_group_climate_ = yaml_group_climate;
+  // Build merged climates section (single + group + comfort) for convenience
+  {
+    std::string merged;
+    merged += "climate:\n";
+    // Extract entity blocks from individual sections (which each start with 'climate:\n' if non-empty)
+    auto append_entities = [&merged](const std::string &section) {
+      if (section.empty()) return;
+      const std::string header = "climate:\n";
+      if (section.rfind(header, 0) == 0) {
+        merged += section.substr(header.size()); // skip header, keep entities
+      } else {
+        // Fallback: assume raw entities
+        merged += section;
+        if (!merged.empty() && merged.back() != '\n') merged += '\n';
+      }
+    };
+    append_entities(yaml_climate);
+    append_entities(yaml_group_climate);
+    append_entities(yaml_comfort_climate);
+    this->yaml_last_all_climates_ = merged;
+  }
   if (this->yaml_text_sensor_ != nullptr) {
     this->yaml_text_sensor_->publish_state(out);
   }
