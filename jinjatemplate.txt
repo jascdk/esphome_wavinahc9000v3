@@ -1,99 +1,39 @@
-Home Assistant Jinja templates to stitch chunked YAML sensors into complete sections (supports optional comfort & group climates; floor sensor YAML removed). Unified all-climates sensor removed.
+Home Assistant Jinja templates to stitch chunked YAML sensors into complete sections (supports optional comfort & group climates; floor sensor YAML removed). The deprecated unified all-climates sensor was removed.
+
 All-in-one (climate + sensor)
 {% raw %}
-{# Gather chunk sensors and indent entity blocks #}
-All-in-one (climate + sensor)
-{% raw %}
-{# Gather chunk sensors and indent entity blocks #}
-{% set all_climates = states.sensor
-  | rejectattr('state','equalto','')
-  | selectattr('entity_id','equalto','sensor.wavin_yaml_all_climates')
-  | selectattr('state','ne','unknown')
-  | selectattr('state','ne','unavailable')
-  | list %}
+{# Gather chunk sensors and indent entity blocks. Ignore empty/unknown/unavailable. #}
 {% set climates = states.sensor
-  | rejectattr('state','equalto','')
   | selectattr('entity_id','search','_yaml_climate_')
   | selectattr('state','ne','unknown')
   | selectattr('state','ne','unavailable')
+  | rejectattr('state','equalto','')
   | sort(attribute='entity_id') | list %}
 {% set comfort_climates = states.sensor
-  | rejectattr('state','equalto','')
   | selectattr('entity_id','search','_yaml_comfort_climate_')
   | selectattr('state','ne','unknown')
   | selectattr('state','ne','unavailable')
-  | sort(attribute='entity_id') | list %}
-{% set group = states.sensor
   | rejectattr('state','equalto','')
-  | selectattr('entity_id','equalto','sensor.wavin_yaml_group_climate')
+  | sort(attribute='entity_id') | list %}
+{% set group_chunks = states.sensor
+  | selectattr('entity_id','search','_yaml_group_climate_chunk_')
   | selectattr('state','ne','unknown')
   | selectattr('state','ne','unavailable')
-  | list %}
-{% set batteries = states.sensor
   | rejectattr('state','equalto','')
+  | sort(attribute='entity_id') | list %}
+{% set batteries = states.sensor
   | selectattr('entity_id','search','_yaml_battery_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | rejectattr('state','equalto','')
+  | sort(attribute='entity_id') | list %}
 {% set temps = states.sensor
   | selectattr('entity_id','search','_yaml_temperature_')
   | selectattr('state','ne','unknown')
   | selectattr('state','ne','unavailable')
+  | rejectattr('state','equalto','')
   | sort(attribute='entity_id') | list %}
 
-{% if all_climates|length == 1 and all_climates[0].state | trim %}
-{{ all_climates[0].state | trim }}
-{% else %}
-  {# Strip leading 'climate:' header if present in group sensor #}
-  {% set g = group[0].state | trim %}
-  {% if g.startswith('climate:') %}
-    {{ (g.split('\n',1)[1] | trim | replace('\n', '\n  ')) }}
-  {% else %}
-    {{ (g | replace('\n', '\n  ')) }}
-  {% endif %}
-{% for s in climates %}
-{% endif %}
-{% endfor %}
-{% for s in comfort_climates %}
-Climate-only (includes optional comfort + group)
-{% endfor %}
-
-sensor:
-{% for s in batteries %}
-  {{ (s.state | trim | replace('\n', '\n  ')) }}
-  | rejectattr('state','equalto','')
-{% endfor %}
-{% for s in temps %}
-  {{ (s.state | trim | replace('\n', '\n  ')) }}
-{% endfor %}
-{% endraw %}
-  | rejectattr('state','equalto','')
-
-Climate-only (includes optional comfort + group; prefers unified if available)
-{% raw %}
-{% set all_climates = states.sensor
-  | selectattr('entity_id','equalto','sensor.wavin_yaml_all_climates')
-  | rejectattr('state','equalto','')
-  | selectattr('state','ne','unknown')
-  | selectattr('entity_id','search','_yaml_climate_')
-  | selectattr('state','ne','unknown')
-  | selectattr('state','ne','unavailable')
-  | sort(attribute='entity_id') | list %}
-{% set comfort_climates = states.sensor
-  | selectattr('entity_id','search','_yaml_comfort_climate_')
-  | selectattr('state','ne','unknown')
-  | selectattr('state','ne','unavailable')
-  | sort(attribute='entity_id') | list %}
-  {% set g = group[0].state | trim %}
-  {% if g.startswith('climate:') %}
-    {{ (g.split('\n',1)[1] | trim | replace('\n', '\n  ')) }}
-  {% else %}
-    {{ (g | replace('\n', '\n  ')) }}
-  {% endif %}
-  | selectattr('entity_id','equalto','sensor.wavin_yaml_group_climate')
-  | selectattr('state','ne','unavailable')
-  | list %}
-
-{% if all_climates|length == 1 and all_climates[0].state | trim %}
-{{ all_climates[0].state | trim }}
-{% else %}
 climate:
 {% for s in climates %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
@@ -101,10 +41,55 @@ climate:
 {% for s in comfort_climates %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
-{% if group|length == 1 and group[0].state | trim %}
+{% if group_chunks | length > 0 %}
   # Group climates
-  {{ (group[0].state | trim | replace('\n', '\n  ')) }}
+  {% for gc in group_chunks %}
+    {{ (gc.state | trim | replace('\n', '\n  ')) }}
+  {% endfor %}
 {% endif %}
+
+sensor:
+{% for s in batteries %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% for s in temps %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% endraw %}
+
+Climate-only (includes optional comfort + group)
+{% raw %}
+{% set climates = states.sensor
+  | selectattr('entity_id','search','_yaml_climate_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | rejectattr('state','equalto','')
+  | sort(attribute='entity_id') | list %}
+{% set comfort_climates = states.sensor
+  | selectattr('entity_id','search','_yaml_comfort_climate_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | rejectattr('state','equalto','')
+  | sort(attribute='entity_id') | list %}
+{% set group_chunks = states.sensor
+  | selectattr('entity_id','search','_yaml_group_climate_chunk_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | rejectattr('state','equalto','')
+  | sort(attribute='entity_id') | list %}
+
+climate:
+{% for s in climates %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% for s in comfort_climates %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% if group_chunks | length > 0 %}
+  # Group climates
+  {% for gc in group_chunks %}
+    {{ (gc.state | trim | replace('\n', '\n  ')) }}
+  {% endfor %}
 {% endif %}
 {% endraw %}
 
