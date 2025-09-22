@@ -655,6 +655,7 @@ void WavinAHC9000::generate_yaml_suggestion() {
   // Name strategy: "Zone G <first>-<last>" or if exactly 2 channels "Zone G <a>&<b>".
   std::string yaml_group_climate;
   bool any_group = false;
+  this->yaml_group_climate_groups_.clear();
   for (auto &kv : primary_groups) {
     const auto &chs = kv.second;
     if (chs.size() <= 1) continue;
@@ -664,6 +665,8 @@ void WavinAHC9000::generate_yaml_suggestion() {
       yaml_group_climate += "climate:\n";
       any_group = true;
     }
+    // Save for chunk helper
+    this->yaml_group_climate_groups_.push_back(sorted);
     std::string name;
     if (sorted.size() == 2) name = "Zone G " + std::to_string((int) sorted[0]) + "&" + std::to_string((int) sorted[1]);
     else name = "Zone G " + std::to_string((int) sorted.front()) + "-" + std::to_string((int) sorted.back());
@@ -848,6 +851,26 @@ static std::string build_floor_max_temperature_yaml_for(const std::vector<uint8_
   return y;
 }
 
+static std::string build_group_climate_yaml_for(const std::vector<std::vector<uint8_t>> &groups) {
+  std::string y;
+  for (auto &g : groups) {
+    if (g.empty()) continue;
+    std::string name;
+    if (g.size() == 2) name = "Zone G " + std::to_string((int) g[0]) + "&" + std::to_string((int) g[1]);
+    else name = "Zone G " + std::to_string((int) g.front()) + "-" + std::to_string((int) g.back());
+    y += "- platform: wavin_ahc9000\n";
+    y += "  wavin_ahc9000_id: wavin\n";
+    y += "  name: \"" + name + "\"\n";
+    y += "  members: [";
+    for (size_t i = 0; i < g.size(); i++) {
+      y += std::to_string((int) g[i]);
+      if (i + 1 < g.size()) y += ", ";
+    }
+    y += "]\n";
+  }
+  return y;
+}
+
 std::string WavinAHC9000::get_yaml_climate_chunk(uint8_t start, uint8_t count) const {
   if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
   uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
@@ -901,6 +924,13 @@ std::string WavinAHC9000::get_yaml_floor_max_temperature_chunk(uint8_t start, ui
   uint8_t end = (uint8_t) std::min<size_t>(this->yaml_floor_channels_.size(), (size_t) start + count);
   std::vector<uint8_t> chs(this->yaml_floor_channels_.begin() + start, this->yaml_floor_channels_.begin() + end);
   return build_floor_max_temperature_yaml_for(chs);
+}
+
+std::string WavinAHC9000::get_yaml_group_climate_chunk(uint8_t start, uint8_t count) const {
+  if (start >= this->yaml_group_climate_groups_.size() || count == 0) return std::string("");
+  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_group_climate_groups_.size(), (size_t) start + count);
+  std::vector<std::vector<uint8_t>> slice(this->yaml_group_climate_groups_.begin() + start, this->yaml_group_climate_groups_.begin() + end);
+  return build_group_climate_yaml_for(slice);
 }
 
 void WavinAHC9000::publish_updates() {
