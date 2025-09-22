@@ -22,7 +22,7 @@ text_sensor:
     name: "Wavin YAML Group Climates"
     update_interval: never
     lambda: |-
-      return id(wavin).get_yaml_group_climate().c_str();
+      return id(wavin).get_yaml_group_climate();
   - platform: template
     id: yaml_climate_1
     name: "Wavin YAML Climate 1"
