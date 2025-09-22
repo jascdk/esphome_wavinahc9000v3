@@ -569,6 +569,16 @@ void WavinAHC9000::generate_yaml_suggestion() {
   // One-shot discovery sweep: detect active channels immediately (independent of background polling)
   std::vector<uint8_t> active;
   active.reserve(16);
+  // Map primary element index -> list of channels sharing it (for group climate suggestions)
+  std::map<uint16_t, std::vector<uint8_t>> primary_groups;
+  // Group detection rationale:
+  // If multiple channels report the same primary element index they physically share the same thermostat.
+  // We propose an optional aggregate climate entity using `members: [a, b, ...]` so users can control
+  // all loops for that room with a single setpoint/mode. We keep single-channel suggestions as well
+  // so they can choose either approach. Naming uses a compact pattern:
+  //   - Exactly two channels:  Zone G <a>&<b>
+  //   - More than two:        Zone G <first>-<last>
+  // Users can rename afterwards; we avoid including 'Primary' or raw element index to keep it friendly.
   std::vector<uint16_t> regs;
   for (uint8_t ch = 1; ch <= 16; ch++) {
     uint8_t page = (uint8_t) (ch - 1);
@@ -583,6 +593,9 @@ void WavinAHC9000::generate_yaml_suggestion() {
         auto &st = this->channels_[ch];
         st.primary_index = primary_index;
         st.all_tp_lost = all_tp_lost;
+        if (primary_index > 0) {
+          primary_groups[primary_index].push_back(ch);
+        }
         // Read basic mode + setpoint so climates look sensible in cache
         if (this->read_registers(CAT_PACKED, page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
           uint16_t raw_cfg = regs[0];
@@ -636,6 +649,37 @@ void WavinAHC9000::generate_yaml_suggestion() {
     yaml_climate += "    wavin_ahc9000_id: wavin\n";
     yaml_climate += "    name: \"Zone " + std::to_string((int) ch) + "\"\n";
     yaml_climate += "    channel: " + std::to_string((int) ch) + "\n";
+  }
+
+  // Group climates: for any primary element shared by >1 channel, propose a members-based climate.
+  // Name strategy: "Zone G <first>-<last>" or if exactly 2 channels "Zone G <a>&<b>" for readability.
+  std::string yaml_group_climate;
+  bool any_group = false;
+  for (auto &kv : primary_groups) {
+    const auto &chs = kv.second;
+    if (chs.size() <= 1) continue;
+    // Keep order ascending
+    std::vector<uint8_t> sorted = chs;
+    std::sort(sorted.begin(), sorted.end());
+    if (!any_group) {
+      yaml_group_climate += "climate:\n"; // separate section so user can copy independently
+      any_group = true;
+    }
+    std::string name;
+    if (sorted.size() == 2) {
+      name = "Zone G " + std::to_string((int) sorted[0]) + "&" + std::to_string((int) sorted[1]);
+    } else {
+      name = "Zone G " + std::to_string((int) sorted.front()) + "-" + std::to_string((int) sorted.back());
+    }
+    yaml_group_climate += "  - platform: wavin_ahc9000\n";
+    yaml_group_climate += "    wavin_ahc9000_id: wavin\n";
+    yaml_group_climate += "    name: \"" + name + "\"\n";
+    yaml_group_climate += "    members: [";
+    for (size_t i = 0; i < sorted.size(); i++) {
+      yaml_group_climate += std::to_string((int) sorted[i]);
+      if (i + 1 < sorted.size()) yaml_group_climate += ", ";
+    }
+    yaml_group_climate += "]\n";
   }
 
   // Comfort climates (floor-based current temp) for channels with detected floor sensor
@@ -722,7 +766,9 @@ void WavinAHC9000::generate_yaml_suggestion() {
     }
   }
 
-  std::string out = yaml_climate + "\n" + yaml_batt + "\n" + yaml_temp;
+  std::string out = yaml_climate;
+  if (any_group) out += "\n" + yaml_group_climate;
+  out += "\n" + yaml_batt + "\n" + yaml_temp;
   if (any_comfort) {
     out += "\n" + yaml_comfort_climate;
   }
