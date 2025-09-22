@@ -652,25 +652,21 @@ void WavinAHC9000::generate_yaml_suggestion() {
   }
 
   // Group climates: for any primary element shared by >1 channel, propose a members-based climate.
-  // Name strategy: "Zone G <first>-<last>" or if exactly 2 channels "Zone G <a>&<b>" for readability.
+  // Name strategy: "Zone G <first>-<last>" or if exactly 2 channels "Zone G <a>&<b>".
   std::string yaml_group_climate;
   bool any_group = false;
   for (auto &kv : primary_groups) {
     const auto &chs = kv.second;
     if (chs.size() <= 1) continue;
-    // Keep order ascending
     std::vector<uint8_t> sorted = chs;
     std::sort(sorted.begin(), sorted.end());
     if (!any_group) {
-      yaml_group_climate += "climate:\n"; // separate section so user can copy independently
+      yaml_group_climate += "climate:\n";
       any_group = true;
     }
     std::string name;
-    if (sorted.size() == 2) {
-      name = "Zone G " + std::to_string((int) sorted[0]) + "&" + std::to_string((int) sorted[1]);
-    } else {
-      name = "Zone G " + std::to_string((int) sorted.front()) + "-" + std::to_string((int) sorted.back());
-    }
+    if (sorted.size() == 2) name = "Zone G " + std::to_string((int) sorted[0]) + "&" + std::to_string((int) sorted[1]);
+    else name = "Zone G " + std::to_string((int) sorted.front()) + "-" + std::to_string((int) sorted.back());
     yaml_group_climate += "  - platform: wavin_ahc9000\n";
     yaml_group_climate += "    wavin_ahc9000_id: wavin\n";
     yaml_group_climate += "    name: \"" + name + "\"\n";
@@ -722,63 +718,12 @@ void WavinAHC9000::generate_yaml_suggestion() {
     yaml_temp += "    type: temperature\n";
   }
 
-  // Floor temperature sensors: only include for channels where we have detected a floor probe
-  std::string yaml_floor_temp;
-  bool any_floor = false;
-  for (auto ch : active) {
-    auto it = this->channels_.find(ch);
-    if (it != this->channels_.end() && it->second.has_floor_sensor) {
-      if (!any_floor) {
-        yaml_floor_temp += "sensor:\n"; // header
-        any_floor = true;
-      }
-      yaml_floor_temp += "  - platform: wavin_ahc9000\n";
-      yaml_floor_temp += "    wavin_ahc9000_id: wavin\n";
-      yaml_floor_temp += "    name: \"Zone " + std::to_string((int) ch) + " Floor Temperature\"\n";
-      yaml_floor_temp += "    channel: " + std::to_string((int) ch) + "\n";
-      yaml_floor_temp += "    type: floor_temperature\n";
-    }
-  }
-
-  // Floor min/max sensors (read-only): include when floor probe detected
-  std::string yaml_floor_min;
-  std::string yaml_floor_max;
-  bool any_floor_limits = false;
-  for (auto ch : active) {
-    auto it = this->channels_.find(ch);
-    if (it != this->channels_.end() && it->second.has_floor_sensor) {
-      if (!any_floor_limits) {
-        yaml_floor_min += "sensor:\n";
-        yaml_floor_max += "sensor:\n";
-        any_floor_limits = true;
-      }
-      yaml_floor_min += "  - platform: wavin_ahc9000\n";
-      yaml_floor_min += "    wavin_ahc9000_id: wavin\n";
-      yaml_floor_min += "    name: \"Zone " + std::to_string((int) ch) + " Floor Min Temperature\"\n";
-      yaml_floor_min += "    channel: " + std::to_string((int) ch) + "\n";
-      yaml_floor_min += "    type: floor_min_temperature\n";
-
-      yaml_floor_max += "  - platform: wavin_ahc9000\n";
-      yaml_floor_max += "    wavin_ahc9000_id: wavin\n";
-      yaml_floor_max += "    name: \"Zone " + std::to_string((int) ch) + " Floor Max Temperature\"\n";
-      yaml_floor_max += "    channel: " + std::to_string((int) ch) + "\n";
-      yaml_floor_max += "    type: floor_max_temperature\n";
-    }
-  }
+  // Floor temperature / floor limit sensors omitted per new scope
 
   std::string out = yaml_climate;
   if (any_group) out += "\n" + yaml_group_climate;
   out += "\n" + yaml_batt + "\n" + yaml_temp;
-  if (any_comfort) {
-    out += "\n" + yaml_comfort_climate;
-  }
-  if (any_floor) {
-    out += "\n" + yaml_floor_temp;
-  }
-  if (any_floor_limits) {
-    out += "\n" + yaml_floor_min;
-    out += "\n" + yaml_floor_max;
-  }
+  if (any_comfort) out += "\n" + yaml_comfort_climate;
 
   // Build cached floor channel list for chunk helper usage
   this->yaml_floor_channels_.clear();
@@ -794,7 +739,8 @@ void WavinAHC9000::generate_yaml_suggestion() {
   this->yaml_last_climate_ = yaml_climate;
   this->yaml_last_battery_ = yaml_batt;
   this->yaml_last_temperature_ = yaml_temp;
-  this->yaml_last_floor_temperature_ = yaml_floor_temp;
+  this->yaml_last_floor_temperature_.clear();
+  this->yaml_last_group_climate_ = yaml_group_climate;
   if (this->yaml_text_sensor_ != nullptr) {
     this->yaml_text_sensor_->publish_state(out);
   }

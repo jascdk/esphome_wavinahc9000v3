@@ -1,12 +1,11 @@
-Home Assistant Jinja templates to stitch chunked YAML sensors into complete sections.
+Home Assistant Jinja templates to stitch chunked YAML sensors into complete sections (supports optional comfort & group climates; floor sensor YAML removed).
 
 Prerequisites
 - Call the ESPHome service esphome.wavin_publish_yaml_text_sensors to populate the chunk sensors.
 - Ensure sensors like sensor.wavin_yaml_climate_1..8, sensor.wavin_yaml_battery_1..8, sensor.wavin_yaml_temperature_1..8 have non-empty states.
- - (Optional) For floor-based comfort climates: sensor.wavin_yaml_comfort_climate_1..8 will be present when floor probes are detected.
-- (Optional) If you have floor probes: sensor.wavin_yaml_floor_temperature_1..8 will be present only after a valid floor reading was detected.
-- (Optional) Floor limits (read-only): sensor.wavin_yaml_floor_min_temperature_1..8 and sensor.wavin_yaml_floor_max_temperature_1..8 may be used similarly once implemented.
-- Each chunk sensor outputs only entity blocks (no climate:/sensor: header). The Jinja adds headers and indentation.
+- (Optional) Comfort climates: sensor.wavin_yaml_comfort_climate_1..8 appear for channels with detected floor probes.
+- (Optional) Group climates: sensor.wavin_yaml_group_climate contains a standalone climate: section.
+- Each chunk sensor outputs only entity blocks (no climate:/sensor: header). This template adds headers & indentation.
 
 All-in-one (climate + sensor)
 {% raw %}
@@ -21,6 +20,11 @@ All-in-one (climate + sensor)
   | selectattr('state','ne','unknown')
   | selectattr('state','ne','unavailable')
   | sort(attribute='entity_id') | list %}
+{% set group = states.sensor
+  | selectattr('entity_id','equalto','sensor.wavin_yaml_group_climate')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | list %}
 {% set batteries = states.sensor
   | selectattr('entity_id','search','_yaml_battery_')
   | selectattr('state','ne','unknown')
@@ -31,12 +35,6 @@ All-in-one (climate + sensor)
   | selectattr('state','ne','unknown')
   | selectattr('state','ne','unavailable')
   | sort(attribute='entity_id') | list %}
-{% set floor_temps = states.sensor
-  | selectattr('entity_id','search','_yaml_floor_temperature_')
-  | selectattr('state','ne','unknown')
-  | selectattr('state','ne','unavailable')
-  | selectattr('state','ne','')
-  | sort(attribute='entity_id') | list %}
 
 climate:
 {% for s in climates %}
@@ -45,6 +43,10 @@ climate:
 {% for s in comfort_climates %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
+{% if group|length == 1 and group[0].state | trim %}
+  # Group climates
+  {{ (group[0].state | trim | replace('\n', '\n  ')) }}
+{% endif %}
 
 sensor:
 {% for s in batteries %}
@@ -53,15 +55,9 @@ sensor:
 {% for s in temps %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
-{% if floor_temps | length > 0 %}
-  # Floor temperature sensors (only if probes detected)
-{% for s in floor_temps %}
-  {{ (s.state | trim | replace('\n', '\n  ')) }}
-{% endfor %}
-{% endif %}
 {% endraw %}
 
-Climate-only
+Climate-only (includes optional comfort + group)
 {% raw %}
 {% set climates = states.sensor
   | selectattr('entity_id','search','_yaml_climate_')
@@ -73,6 +69,11 @@ Climate-only
   | selectattr('state','ne','unknown')
   | selectattr('state','ne','unavailable')
   | sort(attribute='entity_id') | list %}
+{% set group = states.sensor
+  | selectattr('entity_id','equalto','sensor.wavin_yaml_group_climate')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | list %}
 
 climate:
 {% for s in climates %}
@@ -81,9 +82,13 @@ climate:
 {% for s in comfort_climates %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
+{% if group|length == 1 and group[0].state | trim %}
+  # Group climates
+  {{ (group[0].state | trim | replace('\n', '\n  ')) }}
+{% endif %}
 {% endraw %}
 
-Sensors-only (battery + temperature + optional floor)
+Sensors-only (battery + temperature)
 {% raw %}
 {% set batteries = states.sensor
   | selectattr('entity_id','search','_yaml_battery_')
@@ -95,12 +100,6 @@ Sensors-only (battery + temperature + optional floor)
   | selectattr('state','ne','unknown')
   | selectattr('state','ne','unavailable')
   | sort(attribute='entity_id') | list %}
-{% set floor_temps = states.sensor
-  | selectattr('entity_id','search','_yaml_floor_temperature_')
-  | selectattr('state','ne','unknown')
-  | selectattr('state','ne','unavailable')
-  | selectattr('state','ne','')
-  | sort(attribute='entity_id') | list %}
 
 sensor:
 {% for s in batteries %}
@@ -109,12 +108,6 @@ sensor:
 {% for s in temps %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
-{% if floor_temps | length > 0 %}
-  # Floor temperature sensors
-{% for s in floor_temps %}
-  {{ (s.state | trim | replace('\n', '\n  ')) }}
-{% endfor %}
-{% endif %}
 {% endraw %}
 
 Comfort climate only

@@ -70,6 +70,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::string get_yaml_battery() const { return this->yaml_last_battery_; }
   std::string get_yaml_temperature() const { return this->yaml_last_temperature_; }
   std::string get_yaml_floor_temperature() const { return this->yaml_last_floor_temperature_; }
+  std::string get_yaml_group_climate() const { return this->yaml_last_group_climate_; }
   // Chunk helpers: return YAML entity blocks (complete entities only, NO section header)
   // start is 0-based entity index among discovered active channels; count is number of entities to include
   std::string get_yaml_climate_chunk(uint8_t start, uint8_t count) const;
@@ -136,6 +137,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::string yaml_last_battery_{};
   std::string yaml_last_temperature_{};
   std::string yaml_last_floor_temperature_{};
+  std::string yaml_last_group_climate_{}; // group climates section (optional)
   std::vector<uint8_t> yaml_active_channels_{}; // active channels discovered during last YAML generation
   std::vector<uint8_t> yaml_floor_channels_{}; // subset with detected floor sensors during last YAML generation
   std::vector<uint8_t> yaml_comfort_climate_channels_{}; // same as floor subset; for comfort climate generation
