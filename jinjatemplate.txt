@@ -43,9 +43,9 @@ climate:
 {% endfor %}
 {% if group_chunks | length > 0 %}
   # Group climates
-  {% for gc in group_chunks %}
-    {{ (gc.state | trim | replace('\n', '\n  ')) }}
-  {% endfor %}
+{% for gc in group_chunks %}
+  {{ (gc.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
 {% endif %}
 
 sensor:
@@ -87,9 +87,9 @@ climate:
 {% endfor %}
 {% if group_chunks | length > 0 %}
   # Group climates
-  {% for gc in group_chunks %}
-    {{ (gc.state | trim | replace('\n', '\n  ')) }}
-  {% endfor %}
+{% for gc in group_chunks %}
+  {{ (gc.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
 {% endif %}
 {% endraw %}
 

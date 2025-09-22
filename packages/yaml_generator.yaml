@@ -243,7 +243,13 @@ api:
     - service: wavin_publish_yaml_text_sensors
       then:
         - lambda: |-
+            // First generate suggestion (populates internal channel lists if ready)
             id(wavin).generate_yaml_suggestion();
+            // If no active channels yet, skip publishing; user can re-run once polling has discovered zones.
+            if (id(wavin).get_yaml_active_count() == 0) {
+              ESP_LOGI("wavin_yaml", "YAML publish skipped: no active channels detected yet (run again after initial polling)");
+              return;
+            }
             id(yaml_climate_1).publish_state(id(wavin).get_yaml_climate_chunk(0, 2));
             id(yaml_climate_2).publish_state(id(wavin).get_yaml_climate_chunk(2, 2));
             id(yaml_climate_3).publish_state(id(wavin).get_yaml_climate_chunk(4, 2));
