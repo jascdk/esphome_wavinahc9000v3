@@ -29,6 +29,9 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void set_poll_channels_per_cycle(uint8_t n) { this->poll_channels_per_cycle_ = n == 0 ? 1 : (n > 16 ? 16 : n); }
   void set_allow_mode_writes(bool v) { this->allow_mode_writes_ = v; }
   bool get_allow_mode_writes() const { return this->allow_mode_writes_; }
+  // Friendly name support (optional per-channel overrides for generated YAML)
+  void set_channel_friendly_name(uint8_t channel, const std::string &name);
+  std::string get_channel_friendly_name(uint8_t channel) const;
 
   void setup() override;
   void loop() override;
@@ -144,6 +147,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::vector<uint8_t> yaml_active_channels_{}; // active channels discovered during last YAML generation
   std::vector<uint8_t> yaml_floor_channels_{}; // subset with detected floor sensors during last YAML generation
   std::vector<uint8_t> yaml_comfort_climate_channels_{}; // same as floor subset; for comfort climate generation
+  std::vector<std::string> channel_friendly_names_; // 1-based index mapping (size >=17)
   std::vector<uint8_t> active_channels_;
   std::map<uint8_t, climate::ClimateMode> desired_mode_; // desired mode to reconcile after refresh
   std::set<uint8_t> strict_mode_channels_; // channels opting into strict baseline writes

@@ -36,6 +36,13 @@ wavin_ahc9000:
   # poll_channels_per_cycle: 8
   # update_interval: 2s
   allow_mode_writes: false
+  # Optional per-channel friendly names used in generated YAML suggestions and chunk sensors
+  # Provide any subset (1..16). Missing entries fallback to "Zone N".
+  channel_01_friendly_name: "Bedroom"
+  channel_02_friendly_name: "Living Room"
+  channel_03_friendly_name: "Kitchen"
+  # channel_04_friendly_name: "Office"
+  # ... add more as needed up to channel_16_friendly_name
 
 # Onboarding helper package (manual enable/disable)
 # Uncomment the yaml_generator include while you want the YAML suggestion sensors & services.
@@ -45,24 +52,27 @@ packages:
   # wavin_debug: !include packages/wavin_debug_services.yaml
 
 climate:
+  # Single channel climate using channel 1 (friendly name -> Bedroom)
   - platform: wavin_ahc9000
     wavin_ahc9000_id: wavin
-    name: "Zone 1"
+    name: "Bedroom"
     channel: 1
+  # Group climate combining channels 2 & 3. Since both have friendly names,
+  # the generated group suggestion will use "Living Room & Kitchen".
   - platform: wavin_ahc9000
     wavin_ahc9000_id: wavin
-    name: "Living Area"
+    name: "Living Area"  # You can override; suggestion would be auto-composed
     members: [2,3]
 
 sensor:
   - platform: wavin_ahc9000
     wavin_ahc9000_id: wavin
-    name: "Zone 1 Battery"
+    name: "Bedroom Battery"
     channel: 1
     type: battery
   - platform: wavin_ahc9000
     wavin_ahc9000_id: wavin
-    name: "Zone 1 Temperature"
+    name: "Bedroom Temperature"
     channel: 1
     type: temperature
 

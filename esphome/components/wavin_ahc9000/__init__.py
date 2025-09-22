@@ -18,17 +18,27 @@ CONF_RECEIVE_TIMEOUT_MS = "receive_timeout_ms"
 CONF_POLL_CHANNELS_PER_CYCLE = "poll_channels_per_cycle"
 CONF_ALLOW_MODE_WRITES = "allow_mode_writes"
 
-CONFIG_SCHEMA = cv.Schema(
-    {
-        cv.GenerateID(): cv.declare_id(WavinAHC9000),
-        cv.Required(CONF_UART_ID): cv.use_id(uart.UARTComponent),
-        cv.Optional(CONF_TX_ENABLE_PIN): pins.gpio_output_pin_schema,
-        cv.Optional(CONF_TEMP_DIVISOR, default=10.0): cv.positive_float,
-        cv.Optional(CONF_RECEIVE_TIMEOUT_MS, default=1000): cv.positive_int,
-        cv.Optional(CONF_POLL_CHANNELS_PER_CYCLE, default=2): cv.int_range(min=1, max=16),
-    cv.Optional(CONF_ALLOW_MODE_WRITES, default=True): cv.boolean,
-    }
-).extend(uart.UART_DEVICE_SCHEMA).extend(cv.polling_component_schema("5s"))
+_FRIENDLY_NAME_KEYS = {
+    cv.Optional(f"channel_{i:02d}_friendly_name"): cv.string for i in range(1, 17)
+}
+
+CONFIG_SCHEMA = (
+    cv.Schema(
+        {
+            cv.GenerateID(): cv.declare_id(WavinAHC9000),
+            cv.Required(CONF_UART_ID): cv.use_id(uart.UARTComponent),
+            cv.Optional(CONF_TX_ENABLE_PIN): pins.gpio_output_pin_schema,
+            cv.Optional(CONF_TEMP_DIVISOR, default=10.0): cv.positive_float,
+            cv.Optional(CONF_RECEIVE_TIMEOUT_MS, default=1000): cv.positive_int,
+            cv.Optional(CONF_POLL_CHANNELS_PER_CYCLE, default=2): cv.int_range(min=1, max=16),
+            cv.Optional(CONF_ALLOW_MODE_WRITES, default=True): cv.boolean,
+            **_FRIENDLY_NAME_KEYS,
+        }
+    )
+    .extend(uart.UART_DEVICE_SCHEMA)
+    .extend(cv.polling_component_schema("5s"))
+)
+
 
 
 async def to_code(config):
@@ -46,3 +56,17 @@ async def to_code(config):
         cg.add(var.set_poll_channels_per_cycle(config[CONF_POLL_CHANNELS_PER_CYCLE]))
     if CONF_ALLOW_MODE_WRITES in config:
         cg.add(var.set_allow_mode_writes(config[CONF_ALLOW_MODE_WRITES]))
+
+    # Parse channel friendly names
+    for key, value in config.items():
+        if not isinstance(key, str):
+            continue
+        if key.startswith("channel_") and key.endswith("_friendly_name"):
+            mid = key[len("channel_") : -len("_friendly_name")]
+            # Accept both zero-padded and non-padded integers 1..16
+            try:
+                ch = int(mid)
+            except ValueError:
+                continue
+            if 1 <= ch <= 16:
+                cg.add(var.set_channel_friendly_name(ch, value))

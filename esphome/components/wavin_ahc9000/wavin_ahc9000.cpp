@@ -28,6 +28,18 @@ static uint16_t crc16(const uint8_t *frame, size_t len) {
 void WavinAHC9000::setup() { ESP_LOGCONFIG(TAG, "Wavin AHC9000 hub setup"); }
 void WavinAHC9000::loop() {}
 
+void WavinAHC9000::set_channel_friendly_name(uint8_t channel, const std::string &name) {
+  if (channel < 1 || channel > 16) return;
+  if (this->channel_friendly_names_.size() < 17) this->channel_friendly_names_.assign(17, std::string());
+  this->channel_friendly_names_[channel] = name;
+}
+
+std::string WavinAHC9000::get_channel_friendly_name(uint8_t channel) const {
+  if (channel < 1 || channel > 16) return std::string();
+  if (this->channel_friendly_names_.size() < 17) return std::string();
+  return this->channel_friendly_names_[channel];
+}
+
 void WavinAHC9000::update() {
   // If polling is temporarily suspended (after a write), skip until window expires
   if (this->suspend_polling_until_ != 0 && millis() < this->suspend_polling_until_) {
@@ -645,9 +657,11 @@ void WavinAHC9000::generate_yaml_suggestion() {
   std::string yaml_climate;
   yaml_climate += "climate:\n";
   for (auto ch : active) {
+    std::string fname = this->get_channel_friendly_name(ch);
+    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
     yaml_climate += "  - platform: wavin_ahc9000\n";
     yaml_climate += "    wavin_ahc9000_id: wavin\n";
-    yaml_climate += "    name: \"Zone " + std::to_string((int) ch) + "\"\n";
+    yaml_climate += "    name: \"" + fname + "\"\n";
     yaml_climate += "    channel: " + std::to_string((int) ch) + "\n";
   }
 
@@ -668,8 +682,31 @@ void WavinAHC9000::generate_yaml_suggestion() {
     // Save for chunk helper
     this->yaml_group_climate_groups_.push_back(sorted);
     std::string name;
-    if (sorted.size() == 2) name = "Zone G " + std::to_string((int) sorted[0]) + "&" + std::to_string((int) sorted[1]);
-    else name = "Zone G " + std::to_string((int) sorted.front()) + "-" + std::to_string((int) sorted.back());
+    // If all members have friendly names, build a composite
+    bool all_named = true;
+    std::vector<std::string> member_names;
+    for (auto ch : sorted) {
+      auto fn = this->get_channel_friendly_name(ch);
+      if (fn.empty()) { all_named = false; break; }
+      member_names.push_back(fn);
+    }
+    if (all_named && !member_names.empty()) {
+      if (member_names.size() == 2) {
+        name = member_names[0] + " & " + member_names[1];
+      } else if (member_names.size() <= 4) {
+        // Join with commas and ' & ' before last for readability
+        for (size_t i = 0; i < member_names.size(); ++i) {
+          if (i > 0) name += (i + 1 == member_names.size() ? " & " : ", ");
+          name += member_names[i];
+        }
+      } else {
+        // Too many to list: First - Last pattern
+        name = member_names.front() + " – " + member_names.back();
+      }
+    } else {
+      if (sorted.size() == 2) name = "Zone G " + std::to_string((int) sorted[0]) + "&" + std::to_string((int) sorted[1]);
+      else name = "Zone G " + std::to_string((int) sorted.front()) + "-" + std::to_string((int) sorted.back());
+    }
     yaml_group_climate += "  - platform: wavin_ahc9000\n";
     yaml_group_climate += "    wavin_ahc9000_id: wavin\n";
     yaml_group_climate += "    name: \"" + name + "\"\n";
@@ -692,9 +729,11 @@ void WavinAHC9000::generate_yaml_suggestion() {
         yaml_comfort_climate += "climate:\n";
         any_comfort = true;
       }
+      std::string fname = this->get_channel_friendly_name(ch);
+      if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
       yaml_comfort_climate += "  - platform: wavin_ahc9000\n";
       yaml_comfort_climate += "    wavin_ahc9000_id: wavin\n";
-      yaml_comfort_climate += "    name: \"Zone " + std::to_string((int) ch) + " Comfort\"\n";
+      yaml_comfort_climate += "    name: \"" + fname + " Comfort\"\n";
       yaml_comfort_climate += "    channel: " + std::to_string((int) ch) + "\n";
       yaml_comfort_climate += "    use_floor_temperature: true\n";
       this->yaml_comfort_climate_channels_.push_back(ch);
@@ -704,9 +743,11 @@ void WavinAHC9000::generate_yaml_suggestion() {
   std::string yaml_batt;
   yaml_batt += "sensor:\n";
   for (auto ch : active) {
+    std::string fname = this->get_channel_friendly_name(ch);
+    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
     yaml_batt += "  - platform: wavin_ahc9000\n";
     yaml_batt += "    wavin_ahc9000_id: wavin\n";
-    yaml_batt += "    name: \"Zone " + std::to_string((int) ch) + " Battery\"\n";
+    yaml_batt += "    name: \"" + fname + " Battery\"\n";
     yaml_batt += "    channel: " + std::to_string((int) ch) + "\n";
     yaml_batt += "    type: battery\n";
   }
@@ -714,9 +755,11 @@ void WavinAHC9000::generate_yaml_suggestion() {
   std::string yaml_temp;
   yaml_temp += "sensor:\n";
   for (auto ch : active) {
+    std::string fname = this->get_channel_friendly_name(ch);
+    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
     yaml_temp += "  - platform: wavin_ahc9000\n";
     yaml_temp += "    wavin_ahc9000_id: wavin\n";
-    yaml_temp += "    name: \"Zone " + std::to_string((int) ch) + " Temperature\"\n";
+    yaml_temp += "    name: \"" + fname + " Temperature\"\n";
     yaml_temp += "    channel: " + std::to_string((int) ch) + "\n";
     yaml_temp += "    type: temperature\n";
   }
@@ -776,88 +819,120 @@ void WavinAHC9000::generate_yaml_suggestion() {
 }
 
 // --- YAML chunk helpers (whole-entity, not byte size) ---
-static std::string build_climate_yaml_for(const std::vector<uint8_t> &chs) {
+static std::string build_climate_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
   // Return only entity blocks, no leading 'climate:' header
   std::string y;
   if (chs.empty()) return y;
   for (auto ch : chs) {
+    std::string fname = parent->get_channel_friendly_name(ch);
+    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
     y += "- platform: wavin_ahc9000\n";
     y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"Zone " + std::to_string((int) ch) + "\"\n";
+    y += "  name: \"" + fname + "\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
   }
   return y;
 }
-static std::string build_battery_yaml_for(const std::vector<uint8_t> &chs) {
+static std::string build_battery_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
   // Return only entity blocks, no leading 'sensor:' header
   std::string y;
   if (chs.empty()) return y;
   for (auto ch : chs) {
+    std::string fname = parent->get_channel_friendly_name(ch);
+    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
     y += "- platform: wavin_ahc9000\n";
     y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"Zone " + std::to_string((int) ch) + " Battery\"\n";
+    y += "  name: \"" + fname + " Battery\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     y += "  type: battery\n";
   }
   return y;
 }
-static std::string build_temperature_yaml_for(const std::vector<uint8_t> &chs) {
+static std::string build_temperature_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
   // Return only entity blocks, no leading 'sensor:' header
   std::string y;
   if (chs.empty()) return y;
   for (auto ch : chs) {
+    std::string fname = parent->get_channel_friendly_name(ch);
+    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
     y += "- platform: wavin_ahc9000\n";
     y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"Zone " + std::to_string((int) ch) + " Temperature\"\n";
+    y += "  name: \"" + fname + " Temperature\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     y += "  type: temperature\n";
   }
   return y;
 }
-static std::string build_floor_temperature_yaml_for(const std::vector<uint8_t> &chs) {
+static std::string build_floor_temperature_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
   std::string y;
   if (chs.empty()) return y;
   for (auto ch : chs) {
+    std::string fname = parent->get_channel_friendly_name(ch);
+    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
     y += "- platform: wavin_ahc9000\n";
     y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"Zone " + std::to_string((int) ch) + " Floor Temperature\"\n";
+    y += "  name: \"" + fname + " Floor Temperature\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     y += "  type: floor_temperature\n";
   }
   return y;
 }
-static std::string build_floor_min_temperature_yaml_for(const std::vector<uint8_t> &chs) {
+static std::string build_floor_min_temperature_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
   std::string y;
   if (chs.empty()) return y;
   for (auto ch : chs) {
+    std::string fname = parent->get_channel_friendly_name(ch);
+    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
     y += "- platform: wavin_ahc9000\n";
     y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"Zone " + std::to_string((int) ch) + " Floor Min Temperature\"\n";
+    y += "  name: \"" + fname + " Floor Min Temperature\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     y += "  type: floor_min_temperature\n";
   }
   return y;
 }
-static std::string build_floor_max_temperature_yaml_for(const std::vector<uint8_t> &chs) {
+static std::string build_floor_max_temperature_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
   std::string y;
   if (chs.empty()) return y;
   for (auto ch : chs) {
+    std::string fname = parent->get_channel_friendly_name(ch);
+    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
     y += "- platform: wavin_ahc9000\n";
     y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"Zone " + std::to_string((int) ch) + " Floor Max Temperature\"\n";
+    y += "  name: \"" + fname + " Floor Max Temperature\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     y += "  type: floor_max_temperature\n";
   }
   return y;
 }
 
-static std::string build_group_climate_yaml_for(const std::vector<std::vector<uint8_t>> &groups) {
+static std::string build_group_climate_yaml_for(const WavinAHC9000 *parent, const std::vector<std::vector<uint8_t>> &groups) {
   std::string y;
   for (auto &g : groups) {
     if (g.empty()) continue;
     std::string name;
-    if (g.size() == 2) name = "Zone G " + std::to_string((int) g[0]) + "&" + std::to_string((int) g[1]);
-    else name = "Zone G " + std::to_string((int) g.front()) + "-" + std::to_string((int) g.back());
+    bool all_named = true;
+    std::vector<std::string> member_names;
+    for (auto ch : g) {
+      auto fn = parent->get_channel_friendly_name(ch);
+      if (fn.empty()) { all_named = false; break; }
+      member_names.push_back(fn);
+    }
+    if (all_named && !member_names.empty()) {
+      if (member_names.size() == 2) {
+        name = member_names[0] + " & " + member_names[1];
+      } else if (member_names.size() <= 4) {
+        for (size_t i = 0; i < member_names.size(); ++i) {
+          if (i > 0) name += (i + 1 == member_names.size() ? " & " : ", ");
+          name += member_names[i];
+        }
+      } else {
+        name = member_names.front() + " – " + member_names.back();
+      }
+    } else {
+      if (g.size() == 2) name = "Zone G " + std::to_string((int) g[0]) + "&" + std::to_string((int) g[1]);
+      else name = "Zone G " + std::to_string((int) g.front()) + "-" + std::to_string((int) g.back());
+    }
     y += "- platform: wavin_ahc9000\n";
     y += "  wavin_ahc9000_id: wavin\n";
     y += "  name: \"" + name + "\"\n";
@@ -875,27 +950,29 @@ std::string WavinAHC9000::get_yaml_climate_chunk(uint8_t start, uint8_t count) c
   if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
   uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
   std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
-  return build_climate_yaml_for(chs);
+  return build_climate_yaml_for(this, chs);
 }
 std::string WavinAHC9000::get_yaml_battery_chunk(uint8_t start, uint8_t count) const {
   if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
   uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
   std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
-  return build_battery_yaml_for(chs);
+  return build_battery_yaml_for(this, chs);
 }
 std::string WavinAHC9000::get_yaml_temperature_chunk(uint8_t start, uint8_t count) const {
   if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
   uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
   std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
-  return build_temperature_yaml_for(chs);
+  return build_temperature_yaml_for(this, chs);
 }
-static std::string build_comfort_climate_yaml_for(const std::vector<uint8_t> &chs) {
+static std::string build_comfort_climate_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
   std::string y;
   if (chs.empty()) return y;
   for (auto ch : chs) {
+    std::string fname = parent->get_channel_friendly_name(ch);
+    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
     y += "- platform: wavin_ahc9000\n";
     y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"Zone " + std::to_string((int) ch) + " Comfort\"\n";
+    y += "  name: \"" + fname + " Comfort\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     y += "  use_floor_temperature: true\n";
   }
@@ -905,32 +982,32 @@ std::string WavinAHC9000::get_yaml_comfort_climate_chunk(uint8_t start, uint8_t 
   if (start >= this->yaml_comfort_climate_channels_.size() || count == 0) return std::string("");
   uint8_t end = (uint8_t) std::min<size_t>(this->yaml_comfort_climate_channels_.size(), (size_t) start + count);
   std::vector<uint8_t> chs(this->yaml_comfort_climate_channels_.begin() + start, this->yaml_comfort_climate_channels_.begin() + end);
-  return build_comfort_climate_yaml_for(chs);
+  return build_comfort_climate_yaml_for(this, chs);
 }
 std::string WavinAHC9000::get_yaml_floor_temperature_chunk(uint8_t start, uint8_t count) const {
   if (start >= this->yaml_floor_channels_.size() || count == 0) return std::string("");
   uint8_t end = (uint8_t) std::min<size_t>(this->yaml_floor_channels_.size(), (size_t) start + count);
   std::vector<uint8_t> chs(this->yaml_floor_channels_.begin() + start, this->yaml_floor_channels_.begin() + end);
-  return build_floor_temperature_yaml_for(chs);
+  return build_floor_temperature_yaml_for(this, chs);
 }
 std::string WavinAHC9000::get_yaml_floor_min_temperature_chunk(uint8_t start, uint8_t count) const {
   if (start >= this->yaml_floor_channels_.size() || count == 0) return std::string("");
   uint8_t end = (uint8_t) std::min<size_t>(this->yaml_floor_channels_.size(), (size_t) start + count);
   std::vector<uint8_t> chs(this->yaml_floor_channels_.begin() + start, this->yaml_floor_channels_.begin() + end);
-  return build_floor_min_temperature_yaml_for(chs);
+  return build_floor_min_temperature_yaml_for(this, chs);
 }
 std::string WavinAHC9000::get_yaml_floor_max_temperature_chunk(uint8_t start, uint8_t count) const {
   if (start >= this->yaml_floor_channels_.size() || count == 0) return std::string("");
   uint8_t end = (uint8_t) std::min<size_t>(this->yaml_floor_channels_.size(), (size_t) start + count);
   std::vector<uint8_t> chs(this->yaml_floor_channels_.begin() + start, this->yaml_floor_channels_.begin() + end);
-  return build_floor_max_temperature_yaml_for(chs);
+  return build_floor_max_temperature_yaml_for(this, chs);
 }
 
 std::string WavinAHC9000::get_yaml_group_climate_chunk(uint8_t start, uint8_t count) const {
   if (start >= this->yaml_group_climate_groups_.size() || count == 0) return std::string("");
   uint8_t end = (uint8_t) std::min<size_t>(this->yaml_group_climate_groups_.size(), (size_t) start + count);
   std::vector<std::vector<uint8_t>> slice(this->yaml_group_climate_groups_.begin() + start, this->yaml_group_climate_groups_.begin() + end);
-  return build_group_climate_yaml_for(slice);
+  return build_group_climate_yaml_for(this, slice);
 }
 
 void WavinAHC9000::publish_updates() {
