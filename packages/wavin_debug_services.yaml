@@ -9,3 +9,11 @@ api:
         - lambda: |-
             id(wavin).dump_channel_floor_limits(channel);
         # Optional: you can still trigger notifications manually using separate automations if desired.
+
+    - service: wavin_strict_heat
+      variables:
+        channel: int
+      then:
+        - lambda: |-
+            // Force baseline 0x4000 on the selected channel
+            id(wavin).normalize_channel_config(channel, false);

@@ -23,9 +23,7 @@ Integrates the Wavin AHC 9000 (a.k.a. Jablotron AC-116) floor heating controller
 ## Quick Start (Final Config Example)
 ```yaml
 external_components:
-  - source:
-      type: local
-      path: esphome/components
+  - source: github://heinekmadsen/esphome_wavinahc9000v3
     components: [wavin_ahc9000]
 
 uart:
@@ -64,6 +62,81 @@ sensor:
     channel: 1
     type: temperature
 ```
+
+### Example ESPHome YAML (explicit platforms)
+This variant shows a single channel, a grouped climate, plus both battery and temperature sensors explicitly defined.
+
+```yaml
+external_components:
+  - source: github://heinekmadsen/esphome_wavinahc9000v3
+    components: [wavin_ahc9000]
+
+uart:
+  id: uart_wavin
+  tx_pin: GPIO17
+  rx_pin: GPIO16
+  baud_rate: 38400
+
+wavin_ahc9000:
+  id: wavin
+  uart_id: uart_wavin
+  update_interval: 5s
+  channel_01_friendly_name: "Bedroom"
+  channel_02_friendly_name: "Living Room"
+  channel_03_friendly_name: "Kitchen"
+
+climate:
+  # Group climate (channels 2 & 3). Generated YAML would comment out single 2/3 climates.
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Living Room & Kitchen"
+    members: [2,3]
+  # Single channel climate (channel 1)
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Bedroom"
+    channel: 1
+
+sensor:
+  # Battery sensor for channel 1
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Bedroom Battery"
+    channel: 1
+    type: battery
+  # Ambient temperature sensor for channel 1
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Bedroom Temperature"
+    channel: 1
+    type: temperature
+```
+
+### Comfort Climate Example
+If a channel has a detected floor probe you can expose an alternative "comfort" climate that reports the floor temperature as the current temperature and also surfaces the floor min/max limits as adjustable low/high targets.
+
+Add `use_floor_temperature: true` to a single-channel climate. You can optionally keep both the normal (air based) and comfort variant for the same physical zone (give them different names) – they will share the underlying setpoint.
+
+```yaml
+climate:
+  # Standard air temperature climate
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Bathroom"
+    channel: 4
+
+  # Comfort (floor-based) variant – requires a valid floor probe reading
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Bathroom Comfort"
+    channel: 4
+    use_floor_temperature: true
+```
+
+Notes:
+* The comfort climate only appears in generated YAML if the floor probe was already detected (plausible >1°C and <90°C reading). If you add it manually and the probe is not yet detected it will show as unavailable until a valid value is read.
+* Low / high target temperatures correspond to the controller's floor min / max limits. Adjusting them writes those limits (clamped 5–35°C, 0.5°C steps with at least 1.0°C separation enforced).
+* Action (heating/idle) logic still derives from the difference between current (floor) temperature and the setpoint with a small hysteresis.
 
 ## Hardware & Wiring
 * RS‑485 (A/B) from controller to a TTL↔RS‑485 adapter.
