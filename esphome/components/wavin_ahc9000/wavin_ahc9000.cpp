@@ -653,17 +653,10 @@ void WavinAHC9000::generate_yaml_suggestion() {
   // Persist active channels for chunk helpers
   this->yaml_active_channels_ = active;
 
-  // Build three YAML sections separately, then compose
+  // Build YAML sections; determine grouped channels first so we can comment out their single climates
   std::string yaml_climate;
   yaml_climate += "climate:\n";
-  for (auto ch : active) {
-    std::string fname = this->get_channel_friendly_name(ch);
-    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    yaml_climate += "  - platform: wavin_ahc9000\n";
-    yaml_climate += "    wavin_ahc9000_id: wavin\n";
-    yaml_climate += "    name: \"" + fname + "\"\n";
-    yaml_climate += "    channel: " + std::to_string((int) ch) + "\n";
-  }
+  this->yaml_grouped_channels_.clear();
 
   // Group climates: for any primary element shared by >1 channel, propose a members-based climate.
   // Name strategy: "Zone G <first>-<last>" or if exactly 2 channels "Zone G <a>&<b>".
@@ -714,8 +707,23 @@ void WavinAHC9000::generate_yaml_suggestion() {
     for (size_t i = 0; i < sorted.size(); i++) {
       yaml_group_climate += std::to_string((int) sorted[i]);
       if (i + 1 < sorted.size()) yaml_group_climate += ", ";
+      // Mark channel as grouped
+      this->yaml_grouped_channels_.insert(sorted[i]);
     }
     yaml_group_climate += "]\n";
+  }
+
+  // Now append single climates (comment out those that are grouped)
+  for (auto ch : active) {
+    std::string fname = this->get_channel_friendly_name(ch);
+    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
+    bool grouped = this->yaml_grouped_channels_.count(ch) != 0;
+    std::string prefix = grouped ? "  #" : "  ";
+    yaml_climate += prefix + " - platform: wavin_ahc9000\n";
+    yaml_climate += prefix + "   wavin_ahc9000_id: wavin\n";
+    yaml_climate += prefix + "   name: \"" + fname + "\"\n";
+    yaml_climate += prefix + "   channel: " + std::to_string((int) ch) + "\n";
+    if (grouped) yaml_climate += prefix + "   # Commented out because channel participates in a group climate above.\n";
   }
 
   // Comfort climates (floor-based current temp) for channels with detected floor sensor
@@ -738,7 +746,6 @@ void WavinAHC9000::generate_yaml_suggestion() {
       yaml_comfort_climate += "    use_floor_temperature: true\n";
       this->yaml_comfort_climate_channels_.push_back(ch);
     }
-  }
 
   std::string yaml_batt;
   yaml_batt += "sensor:\n";
