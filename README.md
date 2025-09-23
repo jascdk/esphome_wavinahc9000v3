@@ -20,6 +20,16 @@ Integrates the Wavin AHC 9000 (a.k.a. Jablotron AC-116) floor heating controller
 | Readiness binary sensor | ✅ | Optional `yaml_ready` type |
 | Robust retry & polling pacing | ✅ | 2-attempt read/write retry logic |
 
+## Project Status / Vibe-Coding Disclaimer
+This is a "vibe-coding" / fast-iteration community project:
+* Reverse-engineered protocol pieces may evolve; some registers/assumptions could change as more hubs are tested.
+* YAML generation format is considered stable enough for use, but minor cosmetic tweaks (indentation, naming heuristics, commenting strategy) can still occur.
+* Floor/comfort logic, group naming rules, and friendly-name composition are pragmatic rather than final standards.
+* Expect occasional refactors prioritizing clarity and onboarding experience over strict backward compatibility of generated suggestions.
+* If you pin this as a GitHub external component for production, review diffs before updating — especially around write behaviors.
+
+Contributions (bug reports, captures, PRs) are welcome. Please include firmware logs (DEBUG level), channel counts, and whether floor probes are present to help refine heuristics.
+
 ## Quick Start (Final Config Example)
 ### TL;DR Workflow
 1. Flash a minimal generation config with the `yaml_generator` package enabled.
