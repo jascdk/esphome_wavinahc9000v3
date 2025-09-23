@@ -1,8 +1,4 @@
-Home Assistant Jinja templates to stitch chunked YAML sensors into complete sections (supports optional comfort & group climates; floor sensor YAML removed). The deprecated unified all-climates sensor was removed.
-
-All-in-one (climate + sensor)
-{% raw %}
-{# Gather chunk sensors and indent entity blocks. Ignore empty/unknown/unavailable. #}
+{# All-in-one (climate + sensor) #}
 {% set climates = states.sensor
   | selectattr('entity_id','search','_yaml_climate_')
   | selectattr('state','ne','unknown')
@@ -55,10 +51,8 @@ sensor:
 {% for s in temps %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
-{% endraw %}
 
-Climate-only (includes optional comfort + group)
-{% raw %}
+{# Climate only #}
 {% set climates = states.sensor
   | selectattr('entity_id','search','_yaml_climate_')
   | selectattr('state','ne','unknown')
@@ -91,10 +85,8 @@ climate:
   {{ (gc.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
 {% endif %}
-{% endraw %}
 
-Sensors-only (battery + temperature)
-{% raw %}
+{# Sensors only #}
 {% set batteries = states.sensor
   | selectattr('entity_id','search','_yaml_battery_')
   | selectattr('state','ne','unknown')
@@ -115,10 +107,8 @@ sensor:
 {% for s in temps %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
-{% endraw %}
 
-Comfort climate only
-{% raw %}
+{# Comfort climates only #}
 {% set comfort_climates = states.sensor
   | selectattr('entity_id','search','_yaml_comfort_climate_')
   | selectattr('state','ne','unknown')
@@ -130,4 +120,3 @@ climate:
 {% for s in comfort_climates %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
-{% endraw %}
