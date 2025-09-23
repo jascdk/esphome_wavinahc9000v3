@@ -746,6 +746,7 @@ void WavinAHC9000::generate_yaml_suggestion() {
       yaml_comfort_climate += "    use_floor_temperature: true\n";
       this->yaml_comfort_climate_channels_.push_back(ch);
     }
+  }
 
   std::string yaml_batt;
   yaml_batt += "sensor:\n";
