@@ -8,7 +8,7 @@ esp32:
     type: esp-idf
 
 external_components:
-  - source: github://heinekmadsen/esphome_wavinahc9000v3@restart
+  - source: github://heinekmadsen/esphome_wavinahc9000v3
     components: [wavin_ahc9000]
     refresh: 0s
 
