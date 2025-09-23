@@ -21,6 +21,34 @@ Integrates the Wavin AHC 9000 (a.k.a. Jablotron AC-116) floor heating controller
 | Robust retry & polling pacing | ✅ | 2-attempt read/write retry logic |
 
 ## Quick Start (Final Config Example)
+### TL;DR Workflow
+1. Flash a minimal generation config with the `yaml_generator` package enabled.
+2. Wait until (optional) `yaml_ready` binary sensor = ON (or ~60s).
+3. Call service: `esphome.<node>_wavin_publish_yaml_text_sensors`.
+4. Open `jinjatemplate.txt` (or `jinja_examples.j2`) in HA Template editor; render combined YAML.
+5. Copy generated entity blocks into your permanent node YAML.
+6. Comment out the generator package include.
+7. Recompile & upload clean firmware.
+
+Flowchart (Mermaid):
+```mermaid
+flowchart TD
+  A[Start / Flash Generation Config] --> B{Discovery Stable?}
+  B -- No --> A
+  B -- Yes --> C[Call publish YAML text sensors service]
+  C --> D[Chunk Sensors Populated]
+  D --> E[Render Jinja Template]
+  E --> F[Copy Entities to Final YAML]
+  F --> G[Disable Generator Package]
+  G --> H[Rebuild & Upload]
+  H --> I{Need Changes Later?}
+  I -- Yes --> A
+  I -- No --> J[Done]
+```
+
+Static diagram (SVG):
+![Workflow Diagram](docs/workflow_diagram.svg)
+
 ```yaml
 external_components:
   - source: github://heinekmadsen/esphome_wavinahc9000v3
@@ -149,6 +177,8 @@ Notes:
 2. Final phase (copied entities, generator removed) → see `example_after_generate_yaml.yaml`.
 
 This keeps the final runtime lean while letting the component propose accurate entities.
+
+See `INSTALLATION.md` for a detailed, step-by-step onboarding guide (generation → stitching → final deploy) plus troubleshooting tips.
 
 Note: climates are defined explicitly under the `climate:` section using platform `wavin_ahc9000` (single channel or grouped). Optional per-channel battery sensors use `sensor: - platform: wavin_ahc9000`.
 
