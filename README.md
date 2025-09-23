@@ -1,33 +1,31 @@
-# ESPHome component: Wavin AHC 9000 / Jablotron AC-116 (restart, minimal scaffold)
+# ESPHome Component: Wavin AHC 9000 / Jablotron AC-116 (v3 restart)
 
-This repo contains an ESPHome external component to integrate a Wavin AHC 9000 (aka Jablotron AC-116) floor heating controller using its serial protocol (Modbus-like with custom function codes 0x43/0x44/0x45).
+Integrates the Wavin AHC 9000 (a.k.a. Jablotron AC-116) floor heating controller via its RS‑485 protocol (custom function codes 0x43 / 0x44 / 0x45). Provides auto‑discovery assisted YAML generation, single & grouped climate entities, comfort (floor‑temperature based) climates, and optional per‑channel sensors.
 
-Status: restarted and functional basics in place: multi-channel staged polling, read current/setpoint/mode/action, and write setpoint/mode. Battery sensors supported per channel.
+## Key Features
 
-## Goals (to be reintroduced incrementally)
-- 16 channels (zones)
-- Climate entity per channel
-- Optional grouped climates that aggregate multiple channels into one entity
-- Read current temperature, setpoint, mode/action
-- Set target temperature (writes setpoint)
-- Optional battery sensors per channel (percentage)
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Up to 16 channels | ✅ | Automatically discovered through staged polling |
+| Single channel climates | ✅ | One climate per active channel |
+| Group climates | ✅ | Channels sharing same primary element grouped; composite name logic |
+| Comfort climates | ✅ | Uses floor temperature as current temp when floor probe detected |
+| Battery sensors | ✅ | Per channel (0–100%) |
+| Temperature sensors | ✅ | Per channel ambient temperature |
+| Floor probe detection | ✅ | Auto-detects plausible floor sensor (>1°C & <90°C) |
+| Friendly names per channel | ✅ | `channel_XX_friendly_name` config; used in generated YAML |
+| YAML suggestion + chunk sensors | ✅ | Service driven; chunks safe for HA text sensor size limits |
+| Commented single climates for grouped members | ✅ | Keeps originals (commented) for reference |
+| Jinja stitching templates | ✅ | Provided (`jinjatemplate.txt` and `jinja_examples.j2`) |
+| Readiness binary sensor | ✅ | Optional `yaml_ready` type |
+| Robust retry & polling pacing | ✅ | 2-attempt read/write retry logic |
 
-## Wiring
-- RS-485 connection to the controller.
-- Use an ESP32 or ESP8266 with a TTL↔RS485 adapter.
-
-## Example ESPHome YAML (explicit platforms, minimal)
+## Quick Start (Final Config Example)
 ```yaml
-esphome:
-  name: wavin-gateway
-
-esp32:
-  board: esp32dev
-  framework:
-    type: esp-idf
-
 external_components:
-  - source: github://heinekmadsen/esphome_wavinahc9000v3@main
+  - source:
+      type: local
+      path: esphome/components
     components: [wavin_ahc9000]
 
 uart:
@@ -35,119 +33,110 @@ uart:
   tx_pin: GPIO17
   rx_pin: GPIO16
   baud_rate: 38400
-  stop_bits: 1
-  parity: NONE
 
 wavin_ahc9000:
   id: wavin
   uart_id: uart_wavin
-  # tx_enable_pin: GPIO5  # Optional, for RS-485 DE/RE
-  # temp_divisor: 10.0    # raw temperature scaling; adjust per spec
   update_interval: 5s
+  channel_01_friendly_name: "Bedroom"
+  channel_02_friendly_name: "Living Room"
+  channel_03_friendly_name: "Kitchen"
 
 climate:
   - platform: wavin_ahc9000
     wavin_ahc9000_id: wavin
-    name: "Zone 1"
-    channel: 1
+    name: "Living Room & Kitchen"
+    members: [2,3]
   - platform: wavin_ahc9000
     wavin_ahc9000_id: wavin
-    name: "Living Area"
-    members: [2, 3]
+    name: "Bedroom"
+    channel: 1
 
 sensor:
   - platform: wavin_ahc9000
     wavin_ahc9000_id: wavin
-    name: "Zone 1 Battery"
+    name: "Bedroom Battery"
     channel: 1
-
-logger:
-  level: DEBUG
+    type: battery
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Bedroom Temperature"
+    channel: 1
+    type: temperature
 ```
+
+## Hardware & Wiring
+* RS‑485 (A/B) from controller to a TTL↔RS‑485 adapter.
+* ESP32 recommended (tested pins 16/17 for stable UART).
+* Optional: DE/RE TX enable pin (set `tx_enable_pin:`) if your transceiver requires manual driver control.
+
+## Two-Phase Workflow (Recommended)
+
+1. Generation phase (minimal config + generator package) → see `example_generate_yaml.yaml`.
+2. Final phase (copied entities, generator removed) → see `example_after_generate_yaml.yaml`.
+
+This keeps the final runtime lean while letting the component propose accurate entities.
 
 Note: climates are defined explicitly under the `climate:` section using platform `wavin_ahc9000` (single channel or grouped). Optional per-channel battery sensors use `sensor: - platform: wavin_ahc9000`.
 
-## Implementation Plan (phased)
-1) Minimal compile and entities visible (this commit)
-2) Add UART framing + CRC, read a single register (log-only)
-3) Add staged polling for per-channel primary element, setpoint, temps, action
-4) Publish values to climates; wire write path for mode/setpoint
-5) Add battery sensors
-
-## Aggregation semantics
-- Current temperature: average across member channels
-- Setpoint: average across member channels
-- Action: heating if any member is heating; otherwise idle
-
-## Development tips
-- Start with one known-good channel.
-- Enable `logger:` at DEBUG to see frames.
-- If using RS-485 transceiver, set `tx_enable_pin` for DE/RE control.
-
-## More config examples
-
-1) Minimal single-controller, all 16 channels, no groups, custom names on a few channels:
-```yaml
-uart:
-  id: uart_wavin
-  tx_pin: GPIO17
-  rx_pin: GPIO16
-  baud_rate: 38400
-
-wavin_ahc9000:
-  uart_id: uart_wavin
-  update_interval: 5s
-
-climate:
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Zone 1"
-    channel: 1
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Zone 2"
-    channel: 2
-```
-
-2) Only use selected channels and one group of paired zones:
+## Friendly Names
+Provide any subset of:
 ```yaml
 wavin_ahc9000:
-  uart_id: uart_wavin
-
-climate:
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Living Area"
-    members: [1,2]
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Bathroom"
-    channel: 3
-
-sensor:
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    name: "Zone 1 Battery"
-    channel: 1
+  channel_01_friendly_name: "Bedroom"
+  channel_07_friendly_name: "Office"
 ```
+Missing entries fallback to `Zone N`.
 
-3) RS-485 transceiver with TX enable and tighter polling (when protocol returns):
-```yaml
-wavin_ahc9000:
-  uart_id: uart_wavin
-  tx_enable_pin: GPIO5
-  update_interval: 3s
-  receive_timeout_ms: 800
-```
+Group climate naming (all members have friendly names):
+* 2 members: `NameA & NameB`
+* 3–4 members: `NameA, NameB & NameC`
+* >4 members: `FirstName – LastName`
+Fallback: `Zone G a&b` or `Zone G first-last`.
 
-## Disclaimer
-This is an independent, community-driven integration. Use at your own risk.
+Single climates that belong to a generated group are still included in the full suggestion but commented out for clarity.
 
-## YAML generator and HA Jinja stitching
+## Aggregation Semantics
+| Property | Group Logic |
+|----------|-------------|
+| Current Temperature | Average of members (or floor temp for comfort variant) |
+| Setpoint | Average of member setpoints |
+| Action | Heating if any member heating else idle |
+
+## Developer / Debug Tips
+* Start with one known-good channel powered & paired.
+* Use `logger:` level DEBUG while validating wiring.
+* Temporarily raise `poll_channels_per_cycle` to accelerate discovery, then revert.
+* Floor probe detection waits for plausible readings; early YAML generation may omit comfort climates—re-run later.
+
+## Services
+| Service | Purpose |
+|---------|---------|
+| `wavin_generate_yaml` | Build latest suggestion internally (does not push chunks) |
+| `wavin_publish_yaml_text_sensors` | Generate then publish chunk sensor states (skips if no channels yet) |
+| `wavin_notify_yaml_chunks` | (Reserved / minimal) triggers generation only |
+| `wavin_strict_heat` | Example: force baseline config (see source) |
+
+Chunk sensors follow naming like `sensor.wavin_yaml_climate_1` etc. See `jinjatemplate.txt` / `jinja_examples.j2` for stitching.
+
+## Jinja Templates
+Two forms are provided:
+* `jinjatemplate.txt` – annotated human-readable reference.
+* `jinja_examples.j2` – syntax-highlight friendly, drop into HA template editor (remove outer comments as needed).
+
+Copy the rendered template output into your final ESPHome YAML, adjust names, then remove the generator package.
+
+## Floor & Comfort Climates
+Comfort climates appear only for channels with a detected floor probe. Names append `Comfort` to the friendly name (or `Zone N`).
+
+## Commented Single Climates for Group Members
+When a group climate is generated, its member single-channel climates remain in the full suggestion but are commented out with an explanatory line. This keeps copy/paste flexible (just uncomment if you later decide to manage them individually).
+
+## YAML Generator Workflow Overview
 
 This component can generate suggested YAML for discovered channels. Because Home Assistant limits text sensor sizes, the suggestion is also exposed as chunked text sensors (each containing only entity blocks, without section headers). Use the included `jinjatemplate.txt` to stitch them back together.
 
-### Enabling the generator (manual include)
+### Enabling the Generator
 
 Files involved:
 - `packages/yaml_generator.on.yaml`  (full set of text sensors + services)
@@ -166,7 +155,7 @@ packages:
 
 After you've copied the generated YAML into your permanent config, simply comment the `yaml_generator` line again to remove the helper entities and services.
 
-### Generating & collecting the YAML
+### Generating & Collecting the YAML
 1. Recompile & upload with the generator enabled.
 2. In Home Assistant call the service: `esphome.<node_name>_wavin_publish_yaml_text_sensors` (or first `wavin_generate_yaml`).
 3. Inspect sensors:
@@ -178,13 +167,13 @@ After you've copied the generated YAML into your permanent config, simply commen
 4. Optionally view the single full suggestion sensor: `sensor.wavin_yaml_suggestion` (may be truncated for very large outputs in HA – use chunks when in doubt).
 5. Open `jinjatemplate.txt` and use the “All-in-one” Jinja macro to stitch chunks back into a cohesive YAML block (adds section headers + indentation).
 
-### Why no substitution toggle?
+### Why Not a Substitution Toggle?
 Early versions used a substitution (`YAML_GEN_STATE`) to switch between on/off files. Remote GitHub package includes cannot use substitutions in the `files:` list, leading to confusion. The project now favors a simple comment/uncomment pattern for reliability both locally and in remote includes.
 
-### Floor probe driven additions
+### Floor Probe Driven Additions / Comfort
 If at least one floor probe is plausibly detected (>1.0°C and <90°C after startup), the generator adds the relevant floor temperature sensor entries. If you trigger the service very early and they are missing, trigger again later.
 
-### Readiness indicator
+### Readiness Indicator
 You can optionally add a `yaml_ready` binary sensor to know when discovery has progressed enough to get stable YAML suggestions:
 
 ```yaml
@@ -197,7 +186,7 @@ binary_sensor:
 
 Once you have migrated the suggested YAML entities you want, disable the generator include to declutter.
 
-### Comfort Setpoint Read-Only Sensor
+### Comfort Setpoint (Read-Only) Sensor
 
 If you do not want writable number entities but still want to surface the current comfort (manual) setpoint as a sensor for dashboards or historical graphs, you can add a `comfort_setpoint` sensor type:
 
@@ -247,4 +236,10 @@ binary_sensor:
     name: "Wavin YAML Ready"
 ```
 
-This readiness indicator is available as a binary_sensor in this branch.
+## Future Ideas
+* Optional toggle to suppress (instead of comment) grouped member single climates in generated YAML.
+* Additional diagnostics (timing stats, packet counters) exposed via sensors.
+* Entity category refinement for sensors (diagnostic vs primary).
+
+## Disclaimer
+Community-driven integration; use at your own risk. Not affiliated with Wavin / Jablotron.
