@@ -26,6 +26,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void set_temp_divisor(float d) { this->temp_divisor_ = d; }
   void set_receive_timeout_ms(uint32_t t) { this->receive_timeout_ms_ = t; }
   void set_tx_enable_pin(GPIOPin *p) { this->tx_enable_pin_ = p; }
+  // Optional half-duplex RS485 DE/RE (flow control) pin. If provided we drive HIGH to transmit and LOW to receive.
+  void set_flow_control_pin(GPIOPin *p) { this->flow_control_pin_ = p; }
   void set_poll_channels_per_cycle(uint8_t n) { this->poll_channels_per_cycle_ = n == 0 ? 1 : (n > 16 ? 16 : n); }
   void set_allow_mode_writes(bool v) { this->allow_mode_writes_ = v; }
   bool get_allow_mode_writes() const { return this->allow_mode_writes_; }
@@ -159,6 +161,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   uint32_t receive_timeout_ms_{1000};
   uint32_t suspend_polling_until_{0};
   GPIOPin *tx_enable_pin_{nullptr};
+  GPIOPin *flow_control_pin_{nullptr};
   uint8_t poll_channels_per_cycle_{2};
   uint8_t next_active_index_{0};
   uint8_t channel_step_[16] = {0};

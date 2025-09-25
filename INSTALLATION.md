@@ -6,6 +6,17 @@ This guide walks you through adding the Wavin AHC 9000 (Jablotron AC‑116) ESPH
 - Working ESPHome setup (1.21+ recommended) and an ESP32 board.
 - RS‑485 adapter wired to the controller (A/B twisted pair) and to ESP32 UART pins (example uses GPIO16=RX, GPIO17=TX).
 - (Optional) Floor probes installed if you want comfort/floor climates.
+ - (Optional) RS‑485 direction control pin (DE/RE) if your adapter does not auto‑manage half‑duplex.
+
+### Choosing Direction Control (flow_control_pin vs tx_enable_pin)
+You can normally wire many small MAX3485/75176 breakout boards so that DE & /RE are tied together. The component now supports two optional GPIOs:
+
+| Option | Behavior | Recommended Use |
+|--------|----------|-----------------|
+| `flow_control_pin` | Pulsed HIGH only while transmitting, LOW for receive. Unified DE/RE. | Preferred (clean bus turnaround; less risk of bus contention) |
+| `tx_enable_pin` | HIGH enables driver (left HIGH between frames if you do not also supply flow control). | Legacy / only if already wired |
+
+Provide at most one (prefer `flow_control_pin`). If both are given they will both toggle (harmless but redundant). If your transceiver auto‑handles direction you can omit both.
 
 ## Overview of the Two-Phase Flow
 1. Minimal “generation” configuration (enables YAML generator package & text sensors).
@@ -50,6 +61,9 @@ wavin_ahc9000:
   id: wavin
   uart_id: uart_wavin
   update_interval: 5s
+  # Optional half‑duplex direction control (choose one):
+  # flow_control_pin: GPIO4   # Preferred (toggles only during TX)
+  # tx_enable_pin: GPIO4      # Legacy enable style
   # Optional temporary speedup (uncomment briefly):
   # poll_channels_per_cycle: 8
   # update_interval: 2s

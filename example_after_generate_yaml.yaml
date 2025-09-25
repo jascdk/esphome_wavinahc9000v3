@@ -26,6 +26,9 @@ wavin_ahc9000:
   id: wavin
   uart_id: uart_wavin
   update_interval: 5s
+  # Optional direction control should you need it later:
+  # flow_control_pin: GPIO4
+  # tx_enable_pin: GPIO4
   # Friendly names kept so future generated snippets (if re-enabled) stay consistent
   channel_01_friendly_name: "Bedroom"
   channel_02_friendly_name: "Living Room"

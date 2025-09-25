@@ -28,6 +28,9 @@ wavin_ahc9000:
   id: wavin
   uart_id: uart_wavin
   update_interval: 5s
+  # Optional RS485 direction control (choose one if needed):
+  # flow_control_pin: GPIO4   # Preferred
+  # tx_enable_pin: GPIO4      # Legacy / if already wired
   # Speed up initial discovery temporarily (optional):
   # poll_channels_per_cycle: 8
   # update_interval: 2s
