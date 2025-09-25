@@ -59,7 +59,11 @@ wavin_ahc9000:
   channel_03_friendly_name: "Kitchen"
 
 packages:
-  yaml_generator: !include packages/yaml_generator.yaml
+  wavin_tools:
+    url: https://github.com/heinekmadsen/esphome_wavinahc9000v3
+    files:
+      - packages/yaml_generator.yaml
+    refresh: 0s
 
 # Optional readiness indicator (turns on when discovery stable)
 binary_sensor:
@@ -128,7 +132,11 @@ In the generation config (or in your final node file if you merged them), commen
 
 ```yaml
 packages:
-  # yaml_generator: !include packages/yaml_generator.yaml
+#  wavin_tools:
+#    url: https://github.com/heinekmadsen/esphome_wavinahc9000v3
+#    files:
+#      - packages/wavin_debug_services.yaml
+#    refresh: 0s
 ```
 
 Leave friendly name keys in place if you want consistent future regeneration.
