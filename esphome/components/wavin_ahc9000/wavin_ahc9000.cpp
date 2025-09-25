@@ -298,12 +298,16 @@ bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index,
     msg[6] = crc & 0xFF;
     msg[7] = crc >> 8;
 
-    if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+  // Direction control: if a dedicated flow control pin (DE/RE) is provided, drive HIGH to enable TX.
+  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(true);
+  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
     ESP_LOGD(TAG, "TX: addr=0x%02X fc=0x%02X cat=%u idx=%u page=%u cnt=%u attempt=%u", msg[0], msg[1], category, index, page, count, (unsigned) attempt + 1);
     this->write_array(msg, 8);
     this->flush();
-    delayMicroseconds(250);
-    if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
+  // Allow line to settle; at 9600 baud 250us is < one char time but sufficient for DE switching.
+  delayMicroseconds(250);
+  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
+  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false); // back to RX ASAP
 
     std::vector<uint8_t> buf;
     uint32_t start = millis();
@@ -364,12 +368,14 @@ bool WavinAHC9000::write_register(uint8_t category, uint8_t page, uint8_t index,
     msg[8] = (uint8_t) (crc & 0xFF);
     msg[9] = (uint8_t) (crc >> 8);
 
-    if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(true);
+  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
     ESP_LOGD(TAG, "TX-WR: cat=%u idx=%u page=%u val=0x%04X attempt=%u", category, index, page, (unsigned) value, (unsigned) attempt + 1);
     this->write_array(msg, 10);
     this->flush();
-    delayMicroseconds(250);
-    if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
+  delayMicroseconds(250);
+  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
+  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false);
 
     std::vector<uint8_t> buf;
     uint32_t start = millis();
@@ -426,12 +432,14 @@ bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t
     msg[10] = (uint8_t) (crc & 0xFF);
     msg[11] = (uint8_t) (crc >> 8);
 
-    if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(true);
+  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
     ESP_LOGD(TAG, "TX-WM: cat=%u idx=%u page=%u and=0x%04X or=0x%04X attempt=%u", category, index, page, (unsigned) and_mask, (unsigned) or_mask, (unsigned) attempt + 1);
     this->write_array(msg, 12);
     this->flush();
-    delayMicroseconds(250);
-    if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
+  delayMicroseconds(250);
+  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
+  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false);
 
     std::vector<uint8_t> buf;
     uint32_t start = millis();
@@ -746,7 +754,7 @@ void WavinAHC9000::generate_yaml_suggestion() {
       yaml_comfort_climate += "    use_floor_temperature: true\n";
       this->yaml_comfort_climate_channels_.push_back(ch);
     }
-
+  }  // end for(active) comfort climates loop
   std::string yaml_batt;
   yaml_batt += "sensor:\n";
   for (auto ch : active) {
