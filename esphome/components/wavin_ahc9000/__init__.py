@@ -5,7 +5,8 @@ from esphome.const import CONF_ID
 from esphome import pins
 
 CODEOWNERS = ["@you"]
-AUTO_LOAD = ["climate", "uart"]
+# Ensure dependent component code is compiled so their headers are available.
+AUTO_LOAD = ["climate", "uart", "sensor", "text_sensor", "binary_sensor"]
 
 ns = cg.esphome_ns.namespace("wavin_ahc9000")
 WavinAHC9000 = ns.class_("WavinAHC9000", cg.PollingComponent, uart.UARTDevice)
