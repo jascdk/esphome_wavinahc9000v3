@@ -4,6 +4,7 @@
 #include "esphome/components/uart/uart.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/binary_sensor/binary_sensor.h"
+#include "esphome/components/switch/switch.h"
 #include "esphome/core/component.h"
 
 #include <vector>
@@ -16,6 +17,7 @@ namespace esphome {
 namespace sensor { class Sensor; }
 namespace text_sensor { class TextSensor; }
 namespace binary_sensor { class BinarySensor; }
+namespace switch_ { class Switch; }
 namespace wavin_ahc9000 {
 
 // Forward
@@ -49,12 +51,14 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   // New read-only floor limit sensors
   void add_channel_floor_min_temperature_sensor(uint8_t ch, sensor::Sensor *s);
   void add_channel_floor_max_temperature_sensor(uint8_t ch, sensor::Sensor *s);
+  void add_channel_child_lock_switch(uint8_t ch, switch_::Switch *s) { this->child_lock_switches_[ch] = s; }
   void add_active_channel(uint8_t ch);
 
   // Send commands
   void write_channel_setpoint(uint8_t channel, float celsius);
   void write_group_setpoint(const std::vector<uint8_t> &members, float celsius);
   void write_channel_mode(uint8_t channel, climate::ClimateMode mode);
+  void write_channel_child_lock(uint8_t channel, bool enable);
   // Write floor temperature limits (Celsius), clamped to sane bounds
   void write_channel_floor_min_temperature(uint8_t channel, float celsius);
   void write_channel_floor_max_temperature(uint8_t channel, float celsius);
@@ -89,6 +93,11 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::string get_yaml_floor_max_temperature_chunk(uint8_t start, uint8_t count) const;
   uint8_t get_yaml_active_count() const { return (uint8_t) this->yaml_active_channels_.size(); }
   bool is_channel_grouped(uint8_t ch) const { return this->yaml_grouped_channels_.count(ch) != 0; }
+  bool is_channel_child_locked(uint8_t ch) const {
+    auto it = this->channels_.find(ch);
+    if (it == this->channels_.end()) return false;
+    return it->second.child_lock;
+  }
 
   // Data access
   float get_channel_current_temp(uint8_t channel) const;
@@ -123,9 +132,10 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
     climate::ClimateMode mode{climate::CLIMATE_MODE_HEAT};
     climate::ClimateAction action{climate::CLIMATE_ACTION_OFF};
     uint8_t battery_pct{255}; // 0..100; 255=unknown
-  uint16_t primary_index{0};
-  bool all_tp_lost{false};
+    uint16_t primary_index{0};
+    bool all_tp_lost{false};
     bool has_floor_sensor{false};
+    bool child_lock{false};
   };
 
   std::map<uint8_t, ChannelState> channels_;
@@ -138,6 +148,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::map<uint8_t, sensor::Sensor *> floor_min_temperature_sensors_;
   std::map<uint8_t, sensor::Sensor *> floor_max_temperature_sensors_;
   std::map<uint8_t, sensor::Sensor *> comfort_setpoint_sensors_;
+  std::map<uint8_t, switch_::Switch *> child_lock_switches_;
   binary_sensor::BinarySensor *yaml_ready_binary_sensor_{nullptr};
   text_sensor::TextSensor *yaml_text_sensor_{nullptr};
   std::string yaml_last_suggestion_{};
@@ -197,9 +208,6 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   static constexpr uint8_t PACKED_STANDBY_TEMPERATURE = 0x04;
   static constexpr uint8_t PACKED_CONFIGURATION = 0x07;
   // Inferred from field dump: floor min/max setpoints exposed in PACKED page
-  // Updated mapping based on user dump for channel 10:
-  //   PACKED[10] = 0x00D7 (215 -> 21.5C) => MIN
-  //   PACKED[11] = 0x00FF (255 -> 25.5C) => MAX
   static constexpr uint8_t PACKED_FLOOR_MIN_TEMPERATURE = 0x0A; // 21.5C example
   static constexpr uint8_t PACKED_FLOOR_MAX_TEMPERATURE = 0x0B; // 25.5C example
   // Note: PACKED_FLOOR_MIN_TEMPERATURE and PACKED_FLOOR_MAX_TEMPERATURE are contiguous; reads
@@ -211,6 +219,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   static constexpr uint16_t PACKED_CONFIGURATION_PROGRAM_BIT = 0x0008; // suspected schedule/program flag
   static constexpr uint16_t PACKED_CONFIGURATION_PROGRAM_MASK = 0x0018; // extended clear: bits 3 and 4
   static constexpr uint16_t PACKED_CONFIGURATION_STRICT_UNLOCK_MASK = 0x0078; // bits 3..6 (avoid touching mode bits 0..2)
+  static constexpr uint16_t PACKED_CONFIGURATION_CHILD_LOCK_MASK = 0x0800; // child lock bit (0x4000->0x4800)
 
   // I/O reliability: number of attempts for read/write before escalating to WARN
   static constexpr uint8_t IO_RETRY_ATTEMPTS = 2; // first failure logged at DEBUG, final at WARN
@@ -247,9 +256,9 @@ class WavinZoneClimate : public climate::Climate, public Component {
  public:
   void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
   void set_single_channel(uint8_t ch) {
-  this->single_channel_ = ch;
-  this->single_channel_set_ = true;
-  this->members_.clear();
+    this->single_channel_ = ch;
+    this->single_channel_set_ = true;
+    this->members_.clear();
   }
   void set_use_floor_temperature(bool v) { this->use_floor_temperature_ = v; }
   void set_members(const std::vector<int> &members) {
@@ -277,3 +286,16 @@ class WavinZoneClimate : public climate::Climate, public Component {
 
 }  // namespace wavin_ahc9000
 }  // namespace esphome
+
+// --- Child lock extension placeholders (to integrate in subsequent patch) ---
+// NOTE: Full integration attempted earlier but patching context mismatched. The following
+// defines will be merged into the class on next edit cycle.
+// Child lock bit observed: PACKED_CONFIGURATION (index 0x07) changes from 0x4000 to 0x4800 when enabled => bit 0x0800.
+// Planned additions inside WavinAHC9000:
+//   - bool is_channel_child_locked(uint8_t ch) const;
+//   - void write_channel_child_lock(uint8_t ch, bool enable);
+//   - ChannelState::bool child_lock; // per-channel cache
+//   - std::map<uint8_t, switch_::Switch*> child_lock_switches_;
+//   - static constexpr uint16_t PACKED_CONFIGURATION_CHILD_LOCK_MASK = 0x0800;
+// Parsing: when reading PACKED_CONFIGURATION, set child_lock = (raw_cfg & mask) != 0.
+// Writing: read-modify-write preserving mode bits and baseline 0x4000 prefix.

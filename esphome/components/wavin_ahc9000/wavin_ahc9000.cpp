@@ -61,7 +61,8 @@ void WavinAHC9000::update() {
       uint16_t mode_bits = raw_cfg & PACKED_CONFIGURATION_MODE_MASK;
       bool is_off = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) || (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY_ALT);
       st.mode = is_off ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
-      ESP_LOGD(TAG, "CH%u cfg=0x%04X mode=%s", (unsigned) ch, (unsigned) raw_cfg, is_off ? "OFF" : "HEAT");
+      st.child_lock = (raw_cfg & PACKED_CONFIGURATION_CHILD_LOCK_MASK) != 0;
+      ESP_LOGD(TAG, "CH%u cfg=0x%04X mode=%s child_lock=%s", (unsigned) ch, (unsigned) raw_cfg, is_off ? "OFF" : "HEAT", st.child_lock?"Y":"N");
       // Reconcile desired mode if pending and mismatch
       auto it_des = this->desired_mode_.find(ch);
       if (it_des != this->desired_mode_.end()) {
@@ -152,7 +153,8 @@ void WavinAHC9000::update() {
             uint16_t mode_bits = raw_cfg & PACKED_CONFIGURATION_MODE_MASK;
             bool is_off = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) || (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY_ALT);
             st.mode = is_off ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
-            ESP_LOGD(TAG, "CH%u cfg=0x%04X mode=%s", ch_num, (unsigned) raw_cfg, is_off ? "OFF" : "HEAT");
+            st.child_lock = (raw_cfg & PACKED_CONFIGURATION_CHILD_LOCK_MASK) != 0;
+            ESP_LOGD(TAG, "CH%u cfg=0x%04X mode=%s child_lock=%s", ch_num, (unsigned) raw_cfg, is_off ? "OFF" : "HEAT", st.child_lock?"Y":"N");
           } else {
             ESP_LOGW(TAG, "CH%u: mode read failed", ch_num);
           }
@@ -529,6 +531,34 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
   }
 }
 
+void WavinAHC9000::write_channel_child_lock(uint8_t channel, bool enable) {
+  if (channel < 1 || channel > 16) return;
+  uint8_t page = (uint8_t) (channel - 1);
+  std::vector<uint16_t> regs;
+  if (!this->read_registers(CAT_PACKED, page, PACKED_CONFIGURATION, 1, regs) || regs.size() < 1) {
+    ESP_LOGW(TAG, "Child lock: read current config failed ch=%u", (unsigned) channel);
+    return;
+  }
+  uint16_t current = regs[0];
+  uint16_t next;
+  if (enable)
+    next = (uint16_t) (current | PACKED_CONFIGURATION_CHILD_LOCK_MASK);
+  else
+    next = (uint16_t) (current & ~PACKED_CONFIGURATION_CHILD_LOCK_MASK);
+  if (next == current) {
+    ESP_LOGD(TAG, "Child lock: no change ch=%u (enable=%s)", (unsigned) channel, enable?"true":"false");
+    return;
+  }
+  if (this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, next)) {
+    this->channels_[channel].child_lock = enable;
+    this->urgent_channels_.push_back(channel);
+    this->suspend_polling_until_ = millis() + 100;
+    ESP_LOGI(TAG, "Child lock: set ch=%u -> %s (0x%04X)", (unsigned) channel, enable?"ENABLED":"DISABLED", (unsigned) next);
+  } else {
+    ESP_LOGW(TAG, "Child lock: write failed ch=%u", (unsigned) channel);
+  }
+}
+
 void WavinAHC9000::write_channel_floor_min_temperature(uint8_t channel, float celsius) {
   if (channel < 1 || channel > 16) return;
   // Clamp to a sane range; controller likely enforces further constraints
@@ -622,6 +652,7 @@ void WavinAHC9000::generate_yaml_suggestion() {
           uint16_t mode_bits = raw_cfg & PACKED_CONFIGURATION_MODE_MASK;
           bool is_off = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) || (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY_ALT);
           st.mode = is_off ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+          st.child_lock = (raw_cfg & PACKED_CONFIGURATION_CHILD_LOCK_MASK) != 0;
         }
         if (this->read_registers(CAT_PACKED, page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
           st.setpoint_c = this->raw_to_c(regs[0]);
@@ -1083,6 +1114,17 @@ void WavinAHC9000::publish_updates() {
     if (it != this->channels_.end()) {
       float v = it->second.floor_max_c;
       if (!std::isnan(v)) s->publish_state(v);
+    }
+  }
+
+  // Child lock switches
+  for (auto &kv : this->child_lock_switches_) {
+    uint8_t ch = kv.first;
+    auto *sw = kv.second;
+    if (!sw) continue;
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end()) {
+      sw->publish_state(it->second.child_lock);
     }
   }
 
