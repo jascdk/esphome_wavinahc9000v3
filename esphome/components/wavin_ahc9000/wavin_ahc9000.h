@@ -22,6 +22,7 @@ namespace wavin_ahc9000 {
 
 // Forward
 class WavinZoneClimate;
+class WavinChildLockSwitch;
 
 class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
  public:
@@ -223,6 +224,25 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
 
   // I/O reliability: number of attempts for read/write before escalating to WARN
   static constexpr uint8_t IO_RETRY_ATTEMPTS = 2; // first failure logged at DEBUG, final at WARN
+};
+
+// Simple dedicated switch subclass for child lock control. Avoids relying on codegen lambdas
+// that reference a specific hub variable name. The state is optimistic; an urgent refresh
+// scheduled by write_channel_child_lock() will reconcile if the write failed.
+class WavinChildLockSwitch : public switch_::Switch {
+ public:
+  void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
+  void set_channel(uint8_t ch) { this->channel_ = ch; }
+ protected:
+  void write_state(bool state) override {
+    if (this->parent_ != nullptr) {
+      this->parent_->write_channel_child_lock(this->channel_, state);
+    }
+    // Optimistic publish; hub publish_updates() will correct after refresh.
+    this->publish_state(state);
+  }
+  WavinAHC9000 *parent_{nullptr};
+  uint8_t channel_{0};
 };
 
 // Inline helpers for configuring sensors
