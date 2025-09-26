@@ -691,6 +691,8 @@ void WavinAHC9000::generate_yaml_suggestion() {
 
   // Persist active channels for chunk helpers
   this->yaml_active_channels_ = active;
+  // For now, propose child lock switches for all active channels (user can trim later)
+  this->yaml_child_lock_channels_ = active;
 
   // Build YAML sections; determine grouped channels first so we can comment out their single climates
   std::string yaml_climate;
@@ -952,6 +954,21 @@ static std::string build_floor_max_temperature_yaml_for(const WavinAHC9000 *pare
   return y;
 }
 
+static std::string build_child_lock_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
+  std::string y;
+  if (chs.empty()) return y;
+  for (auto ch : chs) {
+    std::string fname = parent->get_channel_friendly_name(ch);
+    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
+    y += "- platform: wavin_ahc9000\n";
+    y += "  wavin_ahc9000_id: wavin\n";
+    y += "  name: \"" + fname + " Lock\"\n";
+    y += "  channel: " + std::to_string((int) ch) + "\n";
+    // type defaults to child_lock, so we omit for brevity
+  }
+  return y;
+}
+
 static std::string build_group_climate_yaml_for(const WavinAHC9000 *parent, const std::vector<std::vector<uint8_t>> &groups) {
   std::string y;
   for (auto &g : groups) {
@@ -1054,6 +1071,12 @@ std::string WavinAHC9000::get_yaml_group_climate_chunk(uint8_t start, uint8_t co
   uint8_t end = (uint8_t) std::min<size_t>(this->yaml_group_climate_groups_.size(), (size_t) start + count);
   std::vector<std::vector<uint8_t>> slice(this->yaml_group_climate_groups_.begin() + start, this->yaml_group_climate_groups_.begin() + end);
   return build_group_climate_yaml_for(this, slice);
+}
+std::string WavinAHC9000::get_yaml_child_lock_chunk(uint8_t start, uint8_t count) const {
+  if (start >= this->yaml_child_lock_channels_.size() || count == 0) return std::string("");
+  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_child_lock_channels_.size(), (size_t) start + count);
+  std::vector<uint8_t> slice(this->yaml_child_lock_channels_.begin() + start, this->yaml_child_lock_channels_.begin() + end);
+  return build_child_lock_yaml_for(this, slice);
 }
 
 void WavinAHC9000::publish_updates() {

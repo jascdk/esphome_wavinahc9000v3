@@ -33,6 +33,12 @@ All-in-one (climate + sensor)
   | selectattr('state','ne','unavailable')
   | rejectattr('state','equalto','')
   | sort(attribute='entity_id') | list %}
+{% set locks = states.sensor
+  | selectattr('entity_id','search','_yaml_child_lock_')
+  | selectattr('state','ne','unknown')
+  | selectattr('state','ne','unavailable')
+  | rejectattr('state','equalto','')
+  | sort(attribute='entity_id') | list %}
 
 climate:
 {% for s in climates %}
@@ -55,6 +61,13 @@ sensor:
 {% for s in temps %}
   {{ (s.state | trim | replace('\n', '\n  ')) }}
 {% endfor %}
+{% if locks | length > 0 %}
+
+switch:
+{% for s in locks %}
+  {{ (s.state | trim | replace('\n', '\n  ')) }}
+{% endfor %}
+{% endif %}
 {% endraw %}
 
 Climate-only (includes optional comfort + group)

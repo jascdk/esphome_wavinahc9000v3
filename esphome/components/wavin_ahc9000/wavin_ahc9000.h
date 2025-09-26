@@ -92,6 +92,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::string get_yaml_floor_temperature_chunk(uint8_t start, uint8_t count) const;
   std::string get_yaml_floor_min_temperature_chunk(uint8_t start, uint8_t count) const;
   std::string get_yaml_floor_max_temperature_chunk(uint8_t start, uint8_t count) const;
+  // New: child lock switch YAML chunk (returns switch entities)
+  std::string get_yaml_child_lock_chunk(uint8_t start, uint8_t count) const;
   uint8_t get_yaml_active_count() const { return (uint8_t) this->yaml_active_channels_.size(); }
   bool is_channel_grouped(uint8_t ch) const { return this->yaml_grouped_channels_.count(ch) != 0; }
   bool is_channel_child_locked(uint8_t ch) const {
@@ -162,6 +164,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::vector<uint8_t> yaml_active_channels_{}; // active channels discovered during last YAML generation
   std::vector<uint8_t> yaml_floor_channels_{}; // subset with detected floor sensors during last YAML generation
   std::vector<uint8_t> yaml_comfort_climate_channels_{}; // same as floor subset; for comfort climate generation
+  std::vector<uint8_t> yaml_child_lock_channels_{}; // channels to suggest child lock switches for
   std::set<uint8_t> yaml_grouped_channels_; // channels that are members of any generated group
   std::vector<std::string> channel_friendly_names_; // 1-based index mapping (size >=17)
   std::vector<uint8_t> active_channels_;

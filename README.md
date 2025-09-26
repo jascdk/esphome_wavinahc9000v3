@@ -19,6 +19,7 @@ Integrates the Wavin AHC 9000 (a.k.a. Jablotron AC-116) floor heating controller
 | Jinja stitching templates | ✅ | Provided (`jinjatemplate.txt` and `jinja_examples.j2`) |
 | Readiness binary sensor | ✅ | Optional `yaml_ready` type |
 | Robust retry & polling pacing | ✅ | 2-attempt read/write retry logic |
+| Child lock (per channel) | ✅ | Exposed as switch; toggles controller LOCK bit |
 
 ## Project Status / Vibe-Coding Disclaimer
 This is a "vibe-coding" / fast-iteration community project:
@@ -257,6 +258,85 @@ Copy the rendered template output into your final ESPHome YAML, adjust names, th
 ## Floor & Comfort Climates
 Comfort climates appear only for channels with a detected floor probe. Names append `Comfort` to the friendly name (or `Zone N`).
 
+## Child Lock Switches
+Each thermostat channel exposes an inferred child lock bit (observed change 0x4000 → 0x4800 in the packed configuration register; mask `0x0800`). This component surfaces that as an optional per‑channel switch.
+
+### When to Use
+Lock the physical thermostat interface (prevent local user temperature changes) while still allowing Home Assistant / ESPHome to adjust setpoints programmatically. Turning the switch ON sets the lock; OFF clears it.
+
+### YAML Example
+```yaml
+switch:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    channel: 9
+    # type: child_lock   # optional (defaults to child_lock for now)
+    name: "Office Lock"
+```
+
+Multiple channels:
+```yaml
+switch:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    channel: 3
+    name: "Hall Lock"
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    channel: 7
+    name: "Guest Lock"
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    channel: 9
+    name: "Office Lock"
+```
+
+### Behavior & Notes
+* Writes use a masked register update preserving unrelated bits.
+* The switch publishes its optimistic state immediately; an urgent refresh confirms or corrects it within the next polling cycle.
+* Safe to add/remove at any time (no reboot needed beyond normal ESPHome deployment cycle).
+* If you rarely toggle locks you can omit them from the final config to keep the entity list lean – re‑add later if needed.
+
+### Automation Samples
+Lock all relevant zones at night:
+```yaml
+automation:
+  - alias: Lock Wavin Zones At Night
+    trigger:
+      - platform: time
+        at: "22:30:00"
+    action:
+      - service: switch.turn_on
+        target:
+          entity_id:
+            - switch.office_lock
+            - switch.hall_lock
+            - switch.guest_lock
+```
+
+Unlock in the morning:
+```yaml
+automation:
+  - alias: Unlock Wavin Zones Morning
+    trigger:
+      - platform: time
+        at: "06:30:00"
+    action:
+      - service: switch.turn_off
+        target:
+          entity_id: switch.office_lock
+```
+
+### Troubleshooting
+| Symptom | Suggestion |
+|---------|------------|
+| Switch state flips back | Underlying write failed (bus issue); check logs at DEBUG for masked write result |
+| Switch always off | Channel not yet fully discovered; wait until first packed read (discovery phase) |
+| No switch entity | YAML omitted switch platform or validation failed – ensure indentation & `platform: wavin_ahc9000` |
+
+### Safety Considerations
+Child lock blocks manual thermostat adjustments. Ensure you have reliable automation or a fallback (e.g., override climate setpoint) before mass‑locking all zones.
+
 ## Commented Single Climates for Group Members
 When a group climate is generated, its member single-channel climates remain in the full suggestion but are commented out with an explanatory line. This keeps copy/paste flexible (just uncomment if you later decide to manage them individually).
 
@@ -368,6 +448,7 @@ binary_sensor:
 * Optional toggle to suppress (instead of comment) grouped member single climates in generated YAML.
 * Additional diagnostics (timing stats, packet counters) exposed via sensors.
 * Entity category refinement for sensors (diagnostic vs primary).
+* Bulk child lock service (lock/unlock multiple channels in one call).
 
 ## Disclaimer
 Community-driven integration; use at your own risk. Not affiliated with Wavin / Jablotron.

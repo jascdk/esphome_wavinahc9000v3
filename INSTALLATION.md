@@ -165,6 +165,7 @@ If you ever need to regenerate (e.g. you add channels later):
 | Inspect raw YAML in logs | Look for bannered section “Wavin YAML SUGGESTION” in ESPHome logs |
 | Add floor (comfort) variant after initial deploy | Just add another climate with `use_floor_temperature: true` for the same channel |
 | Only use sensors (no climates) | Copy only sensor blocks from template output |
+| Add child lock switch | See child lock section below and add a `switch:` block |
 
 ---
 ## Troubleshooting
@@ -175,6 +176,8 @@ If you ever need to regenerate (e.g. you add channels later):
 | Group climate name not as expected | Some members missing friendly names – add `channel_XX_friendly_name` entries and regenerate |
 | Single channel climates commented | Those channels are members of a group; uncomment if you want them active individually |
 | Battery always 0% | Thermostat hasn’t reported battery yet or device lacks that metric |
+| Child lock switch state reverts | Bus write failed; check DEBUG logs for masked write retry outcomes |
+| Child lock switch missing | Ensure `platform: wavin_ahc9000` and a `channel:` 1..16 under `switch:` |
 
 ---
 ## Regeneration Checklist (Later Changes)
@@ -190,3 +193,69 @@ If you ever need to regenerate (e.g. you add channels later):
 You now have a streamlined workflow: generate → stitch → adopt → slim down. This keeps your production firmware minimal while still letting the component guide you through optimal entity selection whenever hardware changes.
 
 Happy automating!
+
+---
+
+## Child Lock (Optional Feature)
+Each channel’s packed configuration register exposes a bit (mask `0x0800`) that toggles when the thermostat child lock is engaged. The integration lets you surface this as a simple switch per channel.
+
+### Adding a Child Lock Switch
+Add one (or more) entries under `switch:`:
+```yaml
+switch:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    channel: 9
+    name: "Office Lock"
+```
+`type: child_lock` is optional (defaults to that for now).
+
+### Behavior
+* Turning ON sets the lock bit; turning OFF clears it via a masked write (preserves other config bits).
+* The switch publishes an optimistic state immediately; an urgent refresh validates shortly after.
+* Safe to add/remove any time; does not influence climate operation apart from blocking manual thermostat changes locally.
+
+### Tips
+* If you lock all zones, keep at least one automation or dashboard path to adjust setpoints remotely.
+* For bulk operations, create a HA script or automation targeting multiple `switch.*_lock` entities.
+
+### Example Night Lock Automation
+```yaml
+automation:
+  - alias: Nightly Wavin Child Lock
+    trigger:
+      - platform: time
+        at: "23:00:00"
+    action:
+      - service: switch.turn_on
+        target:
+          entity_id:
+            - switch.office_lock
+            - switch.kitchen_lock
+            - switch.living_room_lock
+```
+
+Unlock in the morning:
+```yaml
+automation:
+  - alias: Morning Wavin Unlock
+    trigger:
+      - platform: time
+        at: "06:30:00"
+    action:
+      - service: switch.turn_off
+        target:
+          entity_id:
+            - switch.office_lock
+            - switch.kitchen_lock
+            - switch.living_room_lock
+```
+
+### Troubleshooting Child Lock
+| Symptom | Remedy |
+|---------|--------|
+| Switch flips back | Check logs; underlying masked write failed (bus or timeout) |
+| No switch | YAML indentation / schema issue – verify top-level `switch:` list item |
+| State lags | Wait one poll cycle; urgent refresh resync soon after write |
+
+---
