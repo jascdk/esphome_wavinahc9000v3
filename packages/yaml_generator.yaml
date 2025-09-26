@@ -233,6 +233,30 @@ text_sensor:
     update_interval: never
     lambda: |-
       return id(wavin).get_yaml_temperature_chunk(14, 2);
+  - platform: template
+    id: yaml_child_lock_1
+    name: "Wavin YAML Child Lock 1"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_child_lock_chunk(0, 4);
+  - platform: template
+    id: yaml_child_lock_2
+    name: "Wavin YAML Child Lock 2"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_child_lock_chunk(4, 4);
+  - platform: template
+    id: yaml_child_lock_3
+    name: "Wavin YAML Child Lock 3"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_child_lock_chunk(8, 4);
+  - platform: template
+    id: yaml_child_lock_4
+    name: "Wavin YAML Child Lock 4"
+    update_interval: never
+    lambda: |-
+      return id(wavin).get_yaml_child_lock_chunk(12, 4);
 
 api:
   services:
@@ -286,6 +310,10 @@ api:
             id(yaml_temperature_6).publish_state(id(wavin).get_yaml_temperature_chunk(10, 2));
             id(yaml_temperature_7).publish_state(id(wavin).get_yaml_temperature_chunk(12, 2));
             id(yaml_temperature_8).publish_state(id(wavin).get_yaml_temperature_chunk(14, 2));
+            id(yaml_child_lock_1).publish_state(id(wavin).get_yaml_child_lock_chunk(0, 4));
+            id(yaml_child_lock_2).publish_state(id(wavin).get_yaml_child_lock_chunk(4, 4));
+            id(yaml_child_lock_3).publish_state(id(wavin).get_yaml_child_lock_chunk(8, 4));
+            id(yaml_child_lock_4).publish_state(id(wavin).get_yaml_child_lock_chunk(12, 4));
     - service: wavin_notify_yaml_chunks
       then:
         - lambda: |-

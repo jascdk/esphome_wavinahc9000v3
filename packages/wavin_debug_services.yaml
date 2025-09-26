@@ -9,6 +9,12 @@ api:
         - lambda: |-
             id(wavin).dump_channel_floor_limits(channel);
         # Optional: you can still trigger notifications manually using separate automations if desired.
+    - service: wavin_dump_all
+      then:
+        - lambda: |-
+            for (int ch = 1; ch <= 16; ch++) {
+              id(wavin).dump_channel_floor_limits(ch);
+            }
 
     - service: wavin_strict_heat
       variables:
