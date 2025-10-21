@@ -76,8 +76,8 @@ wavin_ahc9000:
   uart_id: uart_wavin
   update_interval: 5s
   # Optional: half-duplex RS485 direction control (DE/RE). Only include ONE of these if needed.
-  # flow_control_pin: GPIO4   # Preferred unified DE/RE control (driven HIGH only while transmitting)
-  # tx_enable_pin: GPIO4      # Legacy always-on style driver enable (kept for compatibility)
+  # flow_control_pin: GPIO23  # Preferred unified DE/RE control (driven HIGH only while transmitting)
+  # tx_enable_pin: GPIO23     # Legacy always-on style driver enable (kept for compatibility)
   channel_01_friendly_name: "Bedroom"
   channel_02_friendly_name: "Living Room"
   channel_03_friendly_name: "Kitchen"
@@ -123,7 +123,7 @@ wavin_ahc9000:
   id: wavin
   uart_id: uart_wavin
   update_interval: 5s
-  # flow_control_pin: GPIO4  # (optional) direction control
+  # flow_control_pin: GPIO23 # (optional) direction control
   channel_01_friendly_name: "Bedroom"
   channel_02_friendly_name: "Living Room"
   channel_03_friendly_name: "Kitchen"
@@ -187,6 +187,7 @@ Notes:
 * Optional direction control:
   * `flow_control_pin:` supply a single GPIO tied to DE & /RE (HIGH during TX, LOW for RX). Recommended for most MAX3485/75176 style boards.
   * `tx_enable_pin:` legacy boolean driver enable (HIGH enables, left HIGH between frames). Use only if you already wired it this way; otherwise prefer `flow_control_pin`.
+  * Avoid ESP32 strapping pins for DE/RE (GPIO0, GPIO2, GPIO4, GPIO5, GPIO12, GPIO15). Good choices include GPIO18/19/21/22/23/25/26/27/32/33.
 * If neither is specified and your transceiver auto‑enables, you can omit both.
 
 ### Choosing flow_control_pin vs tx_enable_pin
@@ -194,6 +195,8 @@ Notes:
 |--------|----------|------|------|
 | `flow_control_pin` | Pulsed HIGH only while sending, LOW for receive | Minimizes bus contention; cleaner half‑duplex | Very slightly more GPIO toggling |
 | `tx_enable_pin` | HIGH enables driver (often kept HIGH) | Simple if already wired | Can hold bus driver enabled longer than needed |
+
+Note on pins: Avoid strapping pins (GPIO0, 2, 4, 5, 12, 15) to prevent boot mode issues. Prefer GPIO23 in examples.
 
 Prefer `flow_control_pin` for new builds. Keep `tx_enable_pin` only for backward compatibility or where hardware expects a static enable.
 
