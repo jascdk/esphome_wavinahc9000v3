@@ -182,6 +182,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   uint8_t channel_step_[16] = {0};
   std::vector<uint8_t> urgent_channels_{}; // channels scheduled for immediate refresh on next update
   bool allow_mode_writes_{true};
+  uint32_t post_tx_guard_us_{300};
 
   // YAML readiness tracking: which channels are present and which had an element block read at least once
   uint16_t yaml_primary_present_mask_{0};  // bit i set when channel (i+1) has a primary element and no tp lost
