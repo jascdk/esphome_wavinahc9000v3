@@ -444,6 +444,19 @@ binary_sensor:
     name: "Wavin YAML Ready"
 ```
 
+# Use Ustepper ESP32 Pico unit:
+
+### For easy start with controlling the Wavin AHC 9000 unit, this module below is a good way to start 
+
+https://www.ustepper.com/shop/#!/products/esphome-modbus-module/variant/615309
+
+Below is some ESPHOME inspiration for the Ustepper module (specific) together with Wavin AHC 9000. The code supports climate, temp/battery sensors and also the child locks for the room thermostats. The code have been added with a workaround for "valve-motion", so the valves dont get stuck or leaking (if they have not been used over some time). This "valve-motion" can be set on a given day and time and also how long the "valve-motion" should run. Furthermore the code have been updated, so the desired climate settings does not go away if the esp32 restarts/power-failure, and after a valve-motion has been running - it "saves" the last known temperature / climate settings.
+
+ESPHOME is quite powerfull and there is many possibilites for enhancing the user experience !!!
+
+See : https://github.com/heinekmadsen/esphome_wavinahc9000v3/blob/main/README_2.md
+
+
 ## Future Ideas
 * Optional toggle to suppress (instead of comment) grouped member single climates in generated YAML.
 * Additional diagnostics (timing stats, packet counters) exposed via sensors.
