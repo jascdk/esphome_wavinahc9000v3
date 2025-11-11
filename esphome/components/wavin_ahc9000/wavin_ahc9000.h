@@ -69,38 +69,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void request_status();
   void request_status_channel(uint8_t ch_index);
   void normalize_channel_config(uint8_t channel, bool off);
-  void generate_yaml_suggestion();
-  void set_yaml_ready_binary_sensor(binary_sensor::BinarySensor *s) { this->yaml_ready_binary_sensor_ = s; }
-  void set_yaml_text_sensor(text_sensor::TextSensor *s) { this->yaml_text_sensor_ = s; }
   // Debug helper to dump registers for a channel (to identify floor min/max addresses)
   void dump_channel_floor_limits(uint8_t channel);
-  // Accessor for last generated YAML (for HA notifications via lambda)
-  std::string get_yaml_suggestion() const { return this->yaml_last_suggestion_; }
-  std::string get_yaml_climate() const { return this->yaml_last_climate_; }
-  std::string get_yaml_battery() const { return this->yaml_last_battery_; }
-  std::string get_yaml_temperature() const { return this->yaml_last_temperature_; }
-  std::string get_yaml_floor_temperature() const { return this->yaml_last_floor_temperature_; }
-  std::string get_yaml_group_climate() const { return this->yaml_last_group_climate_; }
-  // Group climate chunk helper (returns entity blocks without 'climate:' header)
-  std::string get_yaml_group_climate_chunk(uint8_t start, uint8_t count) const;
-  // Chunk helpers: return YAML entity blocks (complete entities only, NO section header)
-  // start is 0-based entity index among discovered active channels; count is number of entities to include
-  std::string get_yaml_climate_chunk(uint8_t start, uint8_t count) const;
-  std::string get_yaml_comfort_climate_chunk(uint8_t start, uint8_t count) const;
-  std::string get_yaml_battery_chunk(uint8_t start, uint8_t count) const;
-  std::string get_yaml_temperature_chunk(uint8_t start, uint8_t count) const;
-  std::string get_yaml_floor_temperature_chunk(uint8_t start, uint8_t count) const;
-  std::string get_yaml_floor_min_temperature_chunk(uint8_t start, uint8_t count) const;
-  std::string get_yaml_floor_max_temperature_chunk(uint8_t start, uint8_t count) const;
-  // New: child lock switch YAML chunk (returns switch entities)
-  std::string get_yaml_child_lock_chunk(uint8_t start, uint8_t count) const;
-  uint8_t get_yaml_active_count() const { return (uint8_t) this->yaml_active_channels_.size(); }
-  bool is_channel_grouped(uint8_t ch) const { return this->yaml_grouped_channels_.count(ch) != 0; }
-  bool is_channel_child_locked(uint8_t ch) const {
-    auto it = this->channels_.find(ch);
-    if (it == this->channels_.end()) return false;
-    return it->second.child_lock;
-  }
 
   // Data access
   float get_channel_current_temp(uint8_t channel) const;
@@ -152,20 +122,6 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::map<uint8_t, sensor::Sensor *> floor_max_temperature_sensors_;
   std::map<uint8_t, sensor::Sensor *> comfort_setpoint_sensors_;
   std::map<uint8_t, switch_::Switch *> child_lock_switches_;
-  binary_sensor::BinarySensor *yaml_ready_binary_sensor_{nullptr};
-  text_sensor::TextSensor *yaml_text_sensor_{nullptr};
-  std::string yaml_last_suggestion_{};
-  std::string yaml_last_climate_{};
-  std::string yaml_last_battery_{};
-  std::string yaml_last_temperature_{};
-  std::string yaml_last_floor_temperature_{};
-  std::string yaml_last_group_climate_{}; // group climates section (optional)
-  std::vector<std::vector<uint8_t>> yaml_group_climate_groups_; // channel groups used for chunking
-  std::vector<uint8_t> yaml_active_channels_{}; // active channels discovered during last YAML generation
-  std::vector<uint8_t> yaml_floor_channels_{}; // subset with detected floor sensors during last YAML generation
-  std::vector<uint8_t> yaml_comfort_climate_channels_{}; // same as floor subset; for comfort climate generation
-  std::vector<uint8_t> yaml_child_lock_channels_{}; // channels to suggest child lock switches for
-  std::set<uint8_t> yaml_grouped_channels_; // channels that are members of any generated group
   std::vector<std::string> channel_friendly_names_; // 1-based index mapping (size >=17)
   std::vector<uint8_t> active_channels_;
   std::map<uint8_t, climate::ClimateMode> desired_mode_; // desired mode to reconcile after refresh
@@ -177,15 +133,13 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   uint32_t suspend_polling_until_{0};
   GPIOPin *tx_enable_pin_{nullptr};
   GPIOPin *flow_control_pin_{nullptr};
+  uint32_t frame_time_us_{0};
   uint8_t poll_channels_per_cycle_{2};
   uint8_t next_active_index_{0};
   uint8_t channel_step_[16] = {0};
   std::vector<uint8_t> urgent_channels_{}; // channels scheduled for immediate refresh on next update
   bool allow_mode_writes_{true};
-
-  // YAML readiness tracking: which channels are present and which had an element block read at least once
-  uint16_t yaml_primary_present_mask_{0};  // bit i set when channel (i+1) has a primary element and no tp lost
-  uint16_t yaml_elem_read_mask_{0};        // bit i set when we've successfully read the element block for channel (i+1)
+  uint32_t post_tx_guard_us_{300};
 
   // Protocol constants
   static constexpr uint8_t DEVICE_ADDR = 0x01;
