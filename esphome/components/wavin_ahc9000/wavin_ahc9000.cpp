@@ -4,6 +4,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <memory>
 
 namespace esphome {
 namespace wavin_ahc9000 {
@@ -26,21 +27,12 @@ static uint16_t crc16(const uint8_t *frame, size_t len) {
 }
 
 void WavinAHC9000::setup() {
-  uint32_t baud = 38400;
-  if (this->parent_ != nullptr) {
-    uint32_t parent_baud = this->parent_->get_baud_rate();
-    if (parent_baud != 0) baud = parent_baud;
+  ESP_LOGCONFIG(TAG, "Wavin AHC9000 hub setup (using direct UART transport)");
+  if (this->flow_control_pin_ != nullptr) {
+    this->flow_control_pin_->setup();
+    this->flow_control_pin_->digital_write(false);
+    ESP_LOGCONFIG(TAG, "  Flow control pin configured");
   }
-  // Assume 11 bits per frame (start + 8 data + parity slot + stop) and leave 2 frame times as guard.
-  const uint32_t bits_per_frame = 11;  // start + 8 data + parity slot + stop
-  uint32_t frame_us = (bits_per_frame * 1000000UL + baud - 1) / baud;  // ceil division per frame
-  this->frame_time_us_ = frame_us;
-  // Guard for a full 12-byte Modbus frame plus two extra frame times as margin (covers ACKs reliably)
-  uint32_t worst_case_bytes = 12;
-  uint32_t computed_guard = frame_us * worst_case_bytes + frame_us * 2;  // transmit duration + margin
-  this->post_tx_guard_us_ = std::max<uint32_t>(computed_guard, 2500);  // never below 2.5ms
-  ESP_LOGCONFIG(TAG, "Wavin AHC9000 hub setup (baud=%u frame=%uus guard=%uus)", (unsigned) baud, (unsigned) frame_us,
-                (unsigned) this->post_tx_guard_us_);
 }
 void WavinAHC9000::loop() {}
 
@@ -323,198 +315,169 @@ void WavinAHC9000::add_active_channel(uint8_t ch) {
 
 // Repair functions removed; use normalize_channel_config via API service
 
+// Helper to send data with flow control
+void WavinAHC9000::send_raw_(const uint8_t *data, size_t len) {
+  if (this->flow_control_pin_ != nullptr) {
+    this->flow_control_pin_->digital_write(true);
+  }
+  this->write_array(data, len);
+  this->flush();
+  if (this->flow_control_pin_ != nullptr) {
+    this->flow_control_pin_->digital_write(false);
+  }
+}
+
 bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index, uint8_t count, std::vector<uint16_t> &out) {
-  // Retry logic: attempt up to IO_RETRY_ATTEMPTS. First attempt failures are logged at DEBUG; only the
-  // final failed attempt escalates to WARN to reduce log noise from transient bus glitches.
-  for (uint8_t attempt = 0; attempt < IO_RETRY_ATTEMPTS; attempt++) {
-    uint8_t msg[8];
-    msg[0] = DEVICE_ADDR;
-    msg[1] = FC_READ;
-    msg[2] = category;
-    msg[3] = index;
-    msg[4] = page;
-    msg[5] = count;
-    uint16_t crc = crc16(msg, 6);
-    msg[6] = crc & 0xFF;
-    msg[7] = crc >> 8;
+  // Build Wavin custom frame
+  uint8_t msg[8];
+  msg[0] = DEVICE_ADDR;
+  msg[1] = FC_READ;
+  msg[2] = category;
+  msg[3] = index;
+  msg[4] = page;
+  msg[5] = count;
+  uint16_t crc_val = crc16(msg, 6);
+  msg[6] = crc_val & 0xFF;
+  msg[7] = crc_val >> 8;
 
-  // Direction control: if a dedicated flow control pin (DE/RE) is provided, drive HIGH to enable TX.
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(true);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
-    ESP_LOGD(TAG, "TX: addr=0x%02X fc=0x%02X cat=%u idx=%u page=%u cnt=%u attempt=%u", msg[0], msg[1], category, index, page, count, (unsigned) attempt + 1);
-    this->write_array(msg, 8);
-    this->flush();
-  // Allow line to settle before releasing driver; guard scales with baud rate.
-  delayMicroseconds(this->post_tx_guard_us_);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false); // back to RX ASAP
+  // Clear any pending data in RX buffer
+  while (this->available()) {
+    this->read();
+  }
 
-    std::vector<uint8_t> buf;
-    uint32_t start = millis();
-    while (millis() - start < this->receive_timeout_ms_) {
-      while (this->available()) {
-        int c = this->read();
-        if (c < 0) break;
-        buf.push_back((uint8_t) c);
-        if (buf.size() >= 5) {
-          uint8_t expected = (uint8_t) (buf[2] + 5);
-          if (buf[0] == DEVICE_ADDR && buf[1] == FC_READ && buf.size() == expected) {
-            uint16_t rcrc = crc16(buf.data(), buf.size());
-            if (rcrc != 0) {
-              // CRC mismatch: retry unless last attempt
-              if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-                ESP_LOGW(TAG, "RX: CRC mismatch (len=%u) after %u attempts", (unsigned) buf.size(), (unsigned) IO_RETRY_ATTEMPTS);
-              } else {
-                ESP_LOGD(TAG, "RX: CRC mismatch attempt %u (len=%u) -> retry", (unsigned) attempt + 1, (unsigned) buf.size());
-              }
-              goto next_attempt; // break both loops, retry
-            }
-            uint8_t bytes = buf[2];
-            out.clear();
-            for (uint8_t i = 0; i + 1 < bytes; i += 2) {
-              uint16_t w = (uint16_t) (buf[3 + i] << 8) | buf[3 + i + 1];
-              out.push_back(w);
-            }
-            return true;
+  // Send frame with flow control
+  this->send_raw_(msg, sizeof(msg));
+
+  // Read response
+  std::vector<uint8_t> buf;
+  uint32_t start = millis();
+  while (millis() - start < this->receive_timeout_ms_) {
+    while (this->available()) {
+      int c = this->read();
+      if (c < 0) break;
+      buf.push_back((uint8_t) c);
+      // Check if we have a complete frame
+      if (buf.size() >= 5 && buf[0] == DEVICE_ADDR && buf[1] == FC_READ) {
+        uint8_t expected_len = (uint8_t) (buf[2] + 5);
+        if (buf.size() >= expected_len) {
+          // Verify CRC
+          uint16_t rcrc = crc16(buf.data(), buf.size());
+          if (rcrc != 0) {
+            ESP_LOGW(TAG, "RX: CRC mismatch (len=%u)", (unsigned) buf.size());
+            return false;
           }
+          // Parse registers
+          uint8_t bytes = buf[2];
+          out.clear();
+          for (uint8_t i = 0; i + 1 < bytes; i += 2) {
+            uint16_t w = (uint16_t) (buf[3 + i] << 8) | buf[3 + i + 1];
+            out.push_back(w);
+          }
+          return true;
         }
       }
-      delay(1);
     }
-    // Timeout
-    if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-      ESP_LOGW(TAG, "RX: timeout waiting for response after %u attempts (cat=%u idx=%u page=%u cnt=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page, count);
-    } else {
-      ESP_LOGD(TAG, "RX: timeout attempt %u (cat=%u idx=%u page=%u) -> retry", (unsigned) attempt + 1, category, index, page);
-    }
-  next_attempt:;
+    delay(1);
   }
+  ESP_LOGW(TAG, "Modbus read timeout (cat=%u idx=%u page=%u cnt=%u)", category, index, page, count);
   return false;
 }
 
 bool WavinAHC9000::write_register(uint8_t category, uint8_t page, uint8_t index, uint16_t value) {
-  // Similar retry strategy as read_registers() with severity gating.
-  for (uint8_t attempt = 0; attempt < IO_RETRY_ATTEMPTS; attempt++) {
-    uint8_t msg[10];
-    msg[0] = DEVICE_ADDR;
-    msg[1] = FC_WRITE;
-    msg[2] = category;
-    msg[3] = index;
-    msg[4] = page;
-    msg[5] = 1;  // count
-    msg[6] = (uint8_t) (value >> 8);
-    msg[7] = (uint8_t) (value & 0xFF);
-    uint16_t crc = crc16(msg, 8);
-    msg[8] = (uint8_t) (crc & 0xFF);
-    msg[9] = (uint8_t) (crc >> 8);
+  uint8_t msg[10];
+  msg[0] = DEVICE_ADDR;
+  msg[1] = FC_WRITE;
+  msg[2] = category;
+  msg[3] = index;
+  msg[4] = page;
+  msg[5] = 1;
+  msg[6] = (uint8_t) (value >> 8);
+  msg[7] = (uint8_t) (value & 0xFF);
+  uint16_t crc_val = crc16(msg, 8);
+  msg[8] = (uint8_t) (crc_val & 0xFF);
+  msg[9] = (uint8_t) (crc_val >> 8);
 
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(true);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
-    ESP_LOGD(TAG, "TX-WR: cat=%u idx=%u page=%u val=0x%04X attempt=%u", category, index, page, (unsigned) value, (unsigned) attempt + 1);
-    this->write_array(msg, 10);
-    this->flush();
-  delayMicroseconds(this->post_tx_guard_us_);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false);
+  // Clear any pending data in RX buffer
+  while (this->available()) {
+    this->read();
+  }
 
-    std::vector<uint8_t> buf;
-    uint32_t start = millis();
-    while (millis() - start < this->receive_timeout_ms_) {
-      while (this->available()) {
-        int c = this->read();
-        if (c < 0) break;
-        buf.push_back((uint8_t) c);
-        if (buf.size() >= 5) {
-          uint8_t expected = (uint8_t) (buf[2] + 5);
-          if (buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE && buf.size() == expected) {
-            uint16_t rcrc = crc16(buf.data(), buf.size());
-            bool ok = (rcrc == 0);
-            if (!ok) {
-              if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-                ESP_LOGW(TAG, "ACK-WR: CRC mismatch after %u attempts (cat=%u idx=%u page=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
-              } else {
-                ESP_LOGD(TAG, "ACK-WR: CRC mismatch attempt %u -> retry", (unsigned) attempt + 1);
-              }
-              goto next_wr_attempt;
-            }
-            ESP_LOGD(TAG, "ACK-WR: OK");
-            return true;
+  // Send frame with flow control
+  this->send_raw_(msg, sizeof(msg));
+
+  // Wait for ACK
+  std::vector<uint8_t> buf;
+  uint32_t start = millis();
+  while (millis() - start < this->receive_timeout_ms_) {
+    while (this->available()) {
+      int c = this->read();
+      if (c < 0) break;
+      buf.push_back((uint8_t) c);
+      if (buf.size() >= 5 && buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE) {
+        uint8_t expected_len = (uint8_t) (buf[2] + 5);
+        if (buf.size() >= expected_len) {
+          uint16_t rcrc = crc16(buf.data(), buf.size());
+          if (rcrc != 0) {
+            ESP_LOGW(TAG, "ACK-WR: CRC mismatch");
+            return false;
           }
+          return true;
         }
       }
-      delay(1);
     }
-    if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-      ESP_LOGW(TAG, "ACK-WR: timeout after %u attempts (cat=%u idx=%u page=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
-    } else {
-      ESP_LOGD(TAG, "ACK-WR: timeout attempt %u (cat=%u idx=%u page=%u) -> retry", (unsigned) attempt + 1, category, index, page);
-    }
-  next_wr_attempt:;
+    delay(1);
   }
+  ESP_LOGW(TAG, "Modbus write timeout (cat=%u idx=%u page=%u)", category, index, page);
   return false;
 }
 
 bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t index, uint16_t and_mask, uint16_t or_mask) {
-  // Similar retry strategy as write_register(); reduces spurious WARN logs.
-  for (uint8_t attempt = 0; attempt < IO_RETRY_ATTEMPTS; attempt++) {
-    uint8_t msg[12];
-    msg[0] = DEVICE_ADDR;
-    msg[1] = FC_WRITE_MASKED;
-    msg[2] = category;
-    msg[3] = index;
-    msg[4] = page;
-    msg[5] = 1;  // count
-    msg[6] = (uint8_t) (and_mask >> 8);
-    msg[7] = (uint8_t) (and_mask & 0xFF);
-    msg[8] = (uint8_t) (or_mask >> 8);
-    msg[9] = (uint8_t) (or_mask & 0xFF);
-    uint16_t crc = crc16(msg, 10);
-    msg[10] = (uint8_t) (crc & 0xFF);
-    msg[11] = (uint8_t) (crc >> 8);
+  uint8_t msg[12];
+  msg[0] = DEVICE_ADDR;
+  msg[1] = FC_WRITE_MASKED;
+  msg[2] = category;
+  msg[3] = index;
+  msg[4] = page;
+  msg[5] = 1;
+  msg[6] = (uint8_t) (and_mask >> 8);
+  msg[7] = (uint8_t) (and_mask & 0xFF);
+  msg[8] = (uint8_t) (or_mask >> 8);
+  msg[9] = (uint8_t) (or_mask & 0xFF);
+  uint16_t crc_val = crc16(msg, 10);
+  msg[10] = (uint8_t) (crc_val & 0xFF);
+  msg[11] = (uint8_t) (crc_val >> 8);
 
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(true);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
-    ESP_LOGD(TAG, "TX-WM: cat=%u idx=%u page=%u and=0x%04X or=0x%04X attempt=%u", category, index, page, (unsigned) and_mask, (unsigned) or_mask, (unsigned) attempt + 1);
-    this->write_array(msg, 12);
-    this->flush();
-  delayMicroseconds(this->post_tx_guard_us_);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false);
+  // Clear any pending data in RX buffer
+  while (this->available()) {
+    this->read();
+  }
 
-    std::vector<uint8_t> buf;
-    uint32_t start = millis();
-    while (millis() - start < this->receive_timeout_ms_) {
-      while (this->available()) {
-        int c = this->read();
-        if (c < 0) break;
-        buf.push_back((uint8_t) c);
-        if (buf.size() >= 5) {
-          uint8_t expected = (uint8_t) (buf[2] + 5);
-          if (buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE_MASKED && buf.size() == expected) {
-            uint16_t rcrc = crc16(buf.data(), buf.size());
-            bool ok = (rcrc == 0);
-            if (!ok) {
-              if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-                ESP_LOGW(TAG, "ACK-WM: CRC mismatch after %u attempts (cat=%u idx=%u page=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
-              } else {
-                ESP_LOGD(TAG, "ACK-WM: CRC mismatch attempt %u -> retry", (unsigned) attempt + 1);
-              }
-              goto next_wm_attempt;
-            }
-            ESP_LOGD(TAG, "ACK-WM: OK");
-            return true;
+  // Send frame with flow control
+  this->send_raw_(msg, sizeof(msg));
+
+  // Wait for ACK
+  std::vector<uint8_t> buf;
+  uint32_t start = millis();
+  while (millis() - start < this->receive_timeout_ms_) {
+    while (this->available()) {
+      int c = this->read();
+      if (c < 0) break;
+      buf.push_back((uint8_t) c);
+      if (buf.size() >= 5 && buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE_MASKED) {
+        uint8_t expected_len = (uint8_t) (buf[2] + 5);
+        if (buf.size() >= expected_len) {
+          uint16_t rcrc = crc16(buf.data(), buf.size());
+          if (rcrc != 0) {
+            ESP_LOGW(TAG, "ACK-WM: CRC mismatch");
+            return false;
           }
+          return true;
         }
       }
-      delay(1);
     }
-    if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-      ESP_LOGW(TAG, "ACK-WM: timeout after %u attempts (cat=%u idx=%u page=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
-    } else {
-      ESP_LOGD(TAG, "ACK-WM: timeout attempt %u (cat=%u idx=%u page=%u) -> retry", (unsigned) attempt + 1, category, index, page);
-    }
-  next_wm_attempt:;
+    delay(1);
   }
+  ESP_LOGW(TAG, "Modbus masked write timeout (cat=%u idx=%u page=%u)", category, index, page);
   return false;
 }
 

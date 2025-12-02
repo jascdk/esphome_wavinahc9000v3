@@ -1,19 +1,18 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import uart, climate
+from esphome.components import climate, uart
 from esphome.const import CONF_ID
 from esphome import pins
 
 CODEOWNERS = ["@you"]
+DEPENDENCIES = ["uart"]
 # Ensure dependent component code is compiled so their headers are available.
-AUTO_LOAD = ["climate", "uart", "sensor", "text_sensor", "binary_sensor", "switch"]
+AUTO_LOAD = ["climate", "sensor", "text_sensor", "binary_sensor", "switch"]
 
 ns = cg.esphome_ns.namespace("wavin_ahc9000")
 WavinAHC9000 = ns.class_("WavinAHC9000", cg.PollingComponent, uart.UARTDevice)
 WavinZoneClimate = ns.class_("WavinZoneClimate", climate.Climate, cg.Component)
 
-CONF_UART_ID = "uart_id"
-CONF_TX_ENABLE_PIN = "tx_enable_pin"
 CONF_FLOW_CONTROL_PIN = "flow_control_pin"
 CONF_TEMP_DIVISOR = "temp_divisor"
 CONF_RECEIVE_TIMEOUT_MS = "receive_timeout_ms"
@@ -29,8 +28,6 @@ CONFIG_SCHEMA = (
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(WavinAHC9000),
-            cv.Required(CONF_UART_ID): cv.use_id(uart.UARTComponent),
-            cv.Optional(CONF_TX_ENABLE_PIN): pins.gpio_output_pin_schema,
             cv.Optional(CONF_FLOW_CONTROL_PIN): pins.gpio_output_pin_schema,
             cv.Optional(CONF_TEMP_DIVISOR, default=10.0): cv.positive_float,
             cv.Optional(CONF_RECEIVE_TIMEOUT_MS, default=1000): cv.positive_int,
@@ -40,19 +37,17 @@ CONFIG_SCHEMA = (
             **_FRIENDLY_NAME_KEYS,
         }
     )
-    .extend(uart.UART_DEVICE_SCHEMA)
     .extend(cv.polling_component_schema("5s"))
+    .extend(uart.UART_DEVICE_SCHEMA)
 )
 
 
 
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
-    await uart.register_uart_device(var, config)
     await cg.register_component(var, config)
-    if CONF_TX_ENABLE_PIN in config:
-        pin = await cg.gpio_pin_expression(config[CONF_TX_ENABLE_PIN])
-        cg.add(var.set_tx_enable_pin(pin))
+    await uart.register_uart_device(var, config)
+    
     if CONF_FLOW_CONTROL_PIN in config:
         pin = await cg.gpio_pin_expression(config[CONF_FLOW_CONTROL_PIN])
         cg.add(var.set_flow_control_pin(pin))

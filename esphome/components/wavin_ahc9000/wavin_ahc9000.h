@@ -10,6 +10,7 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <deque>
 #include <cmath>
 #include <string>
 
@@ -28,9 +29,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
  public:
   void set_temp_divisor(float d) { this->temp_divisor_ = d; }
   void set_receive_timeout_ms(uint32_t t) { this->receive_timeout_ms_ = t; }
-  void set_tx_enable_pin(GPIOPin *p) { this->tx_enable_pin_ = p; }
-  // Optional half-duplex RS485 DE/RE (flow control) pin. If provided we drive HIGH to transmit and LOW to receive.
-  void set_flow_control_pin(GPIOPin *p) { this->flow_control_pin_ = p; }
+  void set_flow_control_pin(GPIOPin *pin) { this->flow_control_pin_ = pin; }
   void set_poll_channels_per_cycle(uint8_t n) { this->poll_channels_per_cycle_ = n == 0 ? 1 : (n > 16 ? 16 : n); }
   void set_transactions_per_cycle(uint8_t n) { this->transactions_per_cycle_ = n == 0 ? 1 : n; }
   void set_allow_mode_writes(bool v) { this->allow_mode_writes_ = v; }
@@ -83,11 +82,57 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   climate::ClimateAction get_channel_action(uint8_t channel) const;
 
  protected:
-  // Low-level protocol helpers (dkjonas framing)
-  bool read_registers(uint8_t category, uint8_t page, uint8_t index, uint8_t count, std::vector<uint16_t> &out);
-  bool write_register(uint8_t category, uint8_t page, uint8_t index, uint16_t value);
-  // Masked write: apply (reg & and_mask) | or_mask semantics
-  bool write_masked_register(uint8_t category, uint8_t page, uint8_t index, uint16_t and_mask, uint16_t or_mask);
+    enum class RequestKind : uint8_t {
+      READ_PRIMARY_ELEMENT,
+      READ_CONFIGURATION,
+      READ_SETPOINT,
+      READ_FLOOR_LIMITS,
+      READ_TIMER_EVENT,
+      READ_ELEMENT_BLOCK,
+      WRITE_SETPOINT,
+      WRITE_MODE_BASELINE,
+      WRITE_CHILD_LOCK,
+      WRITE_FLOOR_MIN,
+      WRITE_FLOOR_MAX,
+    };
+
+    struct PendingRequest {
+      uint32_t id{0};
+      RequestKind kind{RequestKind::READ_PRIMARY_ELEMENT};
+      uint8_t channel{0};
+      uint8_t category{0};
+      uint8_t page{0};
+      uint8_t index{0};
+      uint8_t count{0};
+      bool is_write{false};
+      uint16_t value{0};
+      uint16_t and_mask{0};
+      uint16_t or_mask{0};
+      uint32_t enqueue_ms{0};
+      bool channel_step_request{false};
+      bool urgent{false};
+    };
+
+    bool queue_read_request(uint8_t channel, uint8_t category, uint8_t page, uint8_t index, uint8_t count,
+                            RequestKind kind, bool channel_step_request, bool urgent=false);
+    bool queue_write_request(uint8_t channel, uint8_t category, uint8_t page, uint8_t index, uint16_t value,
+                             RequestKind kind, bool urgent=false);
+    bool queue_masked_write_request(uint8_t channel, uint8_t category, uint8_t page, uint8_t index,
+                                    uint16_t and_mask, uint16_t or_mask, RequestKind kind, bool urgent=false);
+    void handle_request_success(uint32_t id, const std::vector<uint8_t> &payload);
+    void handle_request_timeout(uint32_t id);
+    void finalize_channel_request(uint8_t page_index);
+    void process_read_result(const PendingRequest &req, const std::vector<uint16_t> &regs);
+    void process_write_result(const PendingRequest &req);
+    void service_channel(uint8_t channel, uint8_t &transactions_budget);
+    void process_urgent_queue(uint8_t &transactions_budget);
+    void cleanup_timed_out_requests();
+
+    // Transitional synchronous helpers (still used throughout state machine)
+    bool read_registers(uint8_t category, uint8_t page, uint8_t index, uint8_t count, std::vector<uint16_t> &out);
+    bool write_register(uint8_t category, uint8_t page, uint8_t index, uint16_t value);
+    bool write_masked_register(uint8_t category, uint8_t page, uint8_t index, uint16_t and_mask, uint16_t or_mask);
+    void send_raw_(const uint8_t *data, size_t len);
 
   void publish_updates();
 
@@ -132,16 +177,17 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   uint32_t last_poll_ms_{0};
   uint32_t receive_timeout_ms_{1000};
   uint32_t suspend_polling_until_{0};
-  GPIOPin *tx_enable_pin_{nullptr};
-  GPIOPin *flow_control_pin_{nullptr};
-  uint32_t frame_time_us_{0};
   uint8_t poll_channels_per_cycle_{2};
   uint8_t transactions_per_cycle_{4};
   uint8_t next_active_index_{0};
   uint8_t channel_step_[16] = {0};
+  bool channel_waiting_[16] = {false};
+  uint8_t channel_priority_rounds_[16] = {0};
   std::vector<uint8_t> urgent_channels_{}; // channels scheduled for immediate refresh on next update
   bool allow_mode_writes_{true};
-  uint32_t post_tx_guard_us_{300};
+  GPIOPin *flow_control_pin_{nullptr};
+  std::map<uint32_t, PendingRequest> inflight_requests_;
+  uint32_t next_request_id_{1};
 
   // Protocol constants
   static constexpr uint8_t DEVICE_ADDR = 0x01;
@@ -181,8 +227,6 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   static constexpr uint16_t PACKED_CONFIGURATION_STRICT_UNLOCK_MASK = 0x0078; // bits 3..6 (avoid touching mode bits 0..2)
   static constexpr uint16_t PACKED_CONFIGURATION_CHILD_LOCK_MASK = 0x0800; // child lock bit (0x4000->0x4800)
 
-  // I/O reliability: number of attempts for read/write before escalating to WARN
-  static constexpr uint8_t IO_RETRY_ATTEMPTS = 2; // first failure logged at DEBUG, final at WARN
 };
 
 // Simple dedicated switch subclass for child lock control. Avoids relying on codegen lambdas
