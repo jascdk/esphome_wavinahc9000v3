@@ -229,9 +229,6 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
 
 };
 
-// Simple dedicated switch subclass for child lock control. Avoids relying on codegen lambdas
-// that reference a specific hub variable name. The state is optimistic; an urgent refresh
-// scheduled by write_channel_child_lock() will reconcile if the write failed.
 class WavinChildLockSwitch : public switch_::Switch {
  public:
   void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
@@ -305,20 +302,6 @@ class WavinZoneClimate : public climate::Climate, public Component {
   bool use_floor_temperature_{false};
 };
 
-// Repair button removed; use API service to normalize
-
 }  // namespace wavin_ahc9000
 }  // namespace esphome
 
-// --- Child lock extension placeholders (to integrate in subsequent patch) ---
-// NOTE: Full integration attempted earlier but patching context mismatched. The following
-// defines will be merged into the class on next edit cycle.
-// Child lock bit observed: PACKED_CONFIGURATION (index 0x07) changes from 0x4000 to 0x4800 when enabled => bit 0x0800.
-// Planned additions inside WavinAHC9000:
-//   - bool is_channel_child_locked(uint8_t ch) const;
-//   - void write_channel_child_lock(uint8_t ch, bool enable);
-//   - ChannelState::bool child_lock; // per-channel cache
-//   - std::map<uint8_t, switch_::Switch*> child_lock_switches_;
-//   - static constexpr uint16_t PACKED_CONFIGURATION_CHILD_LOCK_MASK = 0x0800;
-// Parsing: when reading PACKED_CONFIGURATION, set child_lock = (raw_cfg & mask) != 0.
-// Writing: read-modify-write preserving mode bits and baseline 0x4000 prefix.
