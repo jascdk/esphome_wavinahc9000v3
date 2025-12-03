@@ -4,6 +4,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <memory>
 
 namespace esphome {
 namespace wavin_ahc9000 {
@@ -25,7 +26,14 @@ static uint16_t crc16(const uint8_t *frame, size_t len) {
   return temp;
 }
 
-void WavinAHC9000::setup() { ESP_LOGCONFIG(TAG, "Wavin AHC9000 hub setup"); }
+void WavinAHC9000::setup() {
+  ESP_LOGCONFIG(TAG, "Wavin AHC9000 hub setup (using direct UART transport)");
+  if (this->flow_control_pin_ != nullptr) {
+    this->flow_control_pin_->setup();
+    this->flow_control_pin_->digital_write(false);
+    ESP_LOGCONFIG(TAG, "  Flow control pin configured");
+  }
+}
 void WavinAHC9000::loop() {}
 
 void WavinAHC9000::set_channel_friendly_name(uint8_t channel, const std::string &name) {
@@ -49,6 +57,18 @@ void WavinAHC9000::update() {
 
   // Process any urgent channels first (scheduled due to a write)
   std::vector<uint16_t> regs;
+  uint8_t transactions_remaining = this->transactions_per_cycle_;
+  if (transactions_remaining == 0) transactions_remaining = 1;
+  auto require_budget = [&](uint8_t *urgent_channel) -> bool {
+    if (transactions_remaining == 0) {
+      if (urgent_channel != nullptr) {
+        this->urgent_channels_.insert(this->urgent_channels_.begin(), *urgent_channel);
+      }
+      return false;
+    }
+    --transactions_remaining;
+    return true;
+  };
   uint8_t urgent_processed = 0;
   while (!this->urgent_channels_.empty() && urgent_processed < this->poll_channels_per_cycle_) {
     uint8_t ch = this->urgent_channels_.front();
@@ -56,6 +76,7 @@ void WavinAHC9000::update() {
     uint8_t ch_page = (uint8_t) (ch - 1);
     auto &st = this->channels_[ch];
     // Perform a compact refresh sequence for the channel
+    if (!require_budget(&ch)) goto done;
     if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
       uint16_t raw_cfg = regs[0];
       uint16_t mode_bits = raw_cfg & PACKED_CONFIGURATION_MODE_MASK;
@@ -73,6 +94,7 @@ void WavinAHC9000::update() {
           uint16_t new_bits = (want == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
           uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (new_bits & PACKED_CONFIGURATION_MODE_MASK));
           ESP_LOGW(TAG, "Reconciling mode for ch=%u cur=0x%04X next=0x%04X", (unsigned) ch, (unsigned) current, (unsigned) next);
+          if (!require_budget(&ch)) goto done;
           if (this->write_register(CAT_PACKED, ch_page, PACKED_CONFIGURATION, next)) {
             // Schedule another quick check
             this->urgent_channels_.push_back(ch);
@@ -84,23 +106,26 @@ void WavinAHC9000::update() {
         }
       }
     }
+    if (!require_budget(&ch)) goto done;
     if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
       st.setpoint_c = this->raw_to_c(regs[0]);
     }
     // Read floor min/max (read-only) during urgent refresh in one combined request (reduces bus load)
+    if (!require_budget(&ch)) goto done;
     if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MIN_TEMPERATURE, 2, regs) && regs.size() >= 2) {
       st.floor_min_c = this->raw_to_c(regs[0]);
       st.floor_max_c = this->raw_to_c(regs[1]);
     }
+    if (!require_budget(&ch)) goto done;
     if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
       bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
       st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
     }
     if (!st.all_tp_lost && st.primary_index > 0) {
       uint8_t elem_page = (uint8_t) (st.primary_index - 1);
+      if (!require_budget(&ch)) goto done;
       if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
         st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
-        this->yaml_elem_read_mask_ |= (1u << (ch - 1));
         if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
           float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
           // Basic plausibility filter (>1..90C) to avoid default/zero noise
@@ -135,12 +160,12 @@ void WavinAHC9000::update() {
     for (int s = 0; s < 2; s++) {
       switch (step) {
         case 0: {
+          if (!require_budget(nullptr)) goto done;
           if (this->read_registers(CAT_CHANNELS, ch_page, CH_PRIMARY_ELEMENT, 1, regs) && regs.size() >= 1) {
             uint16_t v = regs[0];
             st.primary_index = v & CH_PRIMARY_ELEMENT_ELEMENT_MASK;
             st.all_tp_lost = (v & CH_PRIMARY_ELEMENT_ALL_TP_LOST_MASK) != 0;
             ESP_LOGD(TAG, "CH%u primary elem=%u lost=%s", ch_num, (unsigned) st.primary_index, st.all_tp_lost ? "Y" : "N");
-            if (st.primary_index > 0 && !st.all_tp_lost) this->yaml_primary_present_mask_ |= (1u << (ch_num - 1));
           } else {
             ESP_LOGW(TAG, "CH%u: primary element read failed", ch_num);
           }
@@ -148,6 +173,7 @@ void WavinAHC9000::update() {
           break;
         }
         case 1: {
+          if (!require_budget(nullptr)) goto done;
           if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
             uint16_t raw_cfg = regs[0];
             uint16_t mode_bits = raw_cfg & PACKED_CONFIGURATION_MODE_MASK;
@@ -162,6 +188,7 @@ void WavinAHC9000::update() {
           break;
         }
         case 2: {
+          if (!require_budget(nullptr)) goto done;
           if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
             st.setpoint_c = this->raw_to_c(regs[0]);
             ESP_LOGD(TAG, "CH%u setpoint=%.1fC", ch_num, st.setpoint_c);
@@ -173,10 +200,12 @@ void WavinAHC9000::update() {
         }
         case 3: {
           // Read floor min+max together (contiguous) to reduce transactions
+          if (!require_budget(nullptr)) goto done;
           if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MIN_TEMPERATURE, 2, regs) && regs.size() >= 2) {
             st.floor_min_c = this->raw_to_c(regs[0]);
             st.floor_max_c = this->raw_to_c(regs[1]);
           }
+          if (!require_budget(nullptr)) goto done;
           if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
             bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
             st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
@@ -190,9 +219,9 @@ void WavinAHC9000::update() {
         case 4: {
           if (!st.all_tp_lost && st.primary_index > 0) {
             uint8_t elem_page = (uint8_t) (st.primary_index - 1);
+            if (!require_budget(nullptr)) goto done;
             if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
               st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
-              this->yaml_elem_read_mask_ |= (1u << (ch_num - 1));
               if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
                 float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
                 if (ft > 1.0f && ft < 90.0f) {
@@ -241,6 +270,7 @@ void WavinAHC9000::update() {
   }
 
   // publish once per cycle
+done:
   this->publish_updates();
 }
 
@@ -285,198 +315,169 @@ void WavinAHC9000::add_active_channel(uint8_t ch) {
 
 // Repair functions removed; use normalize_channel_config via API service
 
+// Helper to send data with flow control
+void WavinAHC9000::send_raw_(const uint8_t *data, size_t len) {
+  if (this->flow_control_pin_ != nullptr) {
+    this->flow_control_pin_->digital_write(true);
+  }
+  this->write_array(data, len);
+  this->flush();
+  if (this->flow_control_pin_ != nullptr) {
+    this->flow_control_pin_->digital_write(false);
+  }
+}
+
 bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index, uint8_t count, std::vector<uint16_t> &out) {
-  // Retry logic: attempt up to IO_RETRY_ATTEMPTS. First attempt failures are logged at DEBUG; only the
-  // final failed attempt escalates to WARN to reduce log noise from transient bus glitches.
-  for (uint8_t attempt = 0; attempt < IO_RETRY_ATTEMPTS; attempt++) {
-    uint8_t msg[8];
-    msg[0] = DEVICE_ADDR;
-    msg[1] = FC_READ;
-    msg[2] = category;
-    msg[3] = index;
-    msg[4] = page;
-    msg[5] = count;
-    uint16_t crc = crc16(msg, 6);
-    msg[6] = crc & 0xFF;
-    msg[7] = crc >> 8;
+  // Build Wavin custom frame
+  uint8_t msg[8];
+  msg[0] = DEVICE_ADDR;
+  msg[1] = FC_READ;
+  msg[2] = category;
+  msg[3] = index;
+  msg[4] = page;
+  msg[5] = count;
+  uint16_t crc_val = crc16(msg, 6);
+  msg[6] = crc_val & 0xFF;
+  msg[7] = crc_val >> 8;
 
-  // Direction control: if a dedicated flow control pin (DE/RE) is provided, drive HIGH to enable TX.
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(true);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
-    ESP_LOGD(TAG, "TX: addr=0x%02X fc=0x%02X cat=%u idx=%u page=%u cnt=%u attempt=%u", msg[0], msg[1], category, index, page, count, (unsigned) attempt + 1);
-    this->write_array(msg, 8);
-    this->flush();
-  // Allow line to settle; at 9600 baud 250us is < one char time but sufficient for DE switching.
-  delayMicroseconds(250);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false); // back to RX ASAP
+  // Clear any pending data in RX buffer
+  while (this->available()) {
+    this->read();
+  }
 
-    std::vector<uint8_t> buf;
-    uint32_t start = millis();
-    while (millis() - start < this->receive_timeout_ms_) {
-      while (this->available()) {
-        int c = this->read();
-        if (c < 0) break;
-        buf.push_back((uint8_t) c);
-        if (buf.size() >= 5) {
-          uint8_t expected = (uint8_t) (buf[2] + 5);
-          if (buf[0] == DEVICE_ADDR && buf[1] == FC_READ && buf.size() == expected) {
-            uint16_t rcrc = crc16(buf.data(), buf.size());
-            if (rcrc != 0) {
-              // CRC mismatch: retry unless last attempt
-              if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-                ESP_LOGW(TAG, "RX: CRC mismatch (len=%u) after %u attempts", (unsigned) buf.size(), (unsigned) IO_RETRY_ATTEMPTS);
-              } else {
-                ESP_LOGD(TAG, "RX: CRC mismatch attempt %u (len=%u) -> retry", (unsigned) attempt + 1, (unsigned) buf.size());
-              }
-              goto next_attempt; // break both loops, retry
-            }
-            uint8_t bytes = buf[2];
-            out.clear();
-            for (uint8_t i = 0; i + 1 < bytes; i += 2) {
-              uint16_t w = (uint16_t) (buf[3 + i] << 8) | buf[3 + i + 1];
-              out.push_back(w);
-            }
-            return true;
+  // Send frame with flow control
+  this->send_raw_(msg, sizeof(msg));
+
+  // Read response
+  std::vector<uint8_t> buf;
+  uint32_t start = millis();
+  while (millis() - start < this->receive_timeout_ms_) {
+    while (this->available()) {
+      int c = this->read();
+      if (c < 0) break;
+      buf.push_back((uint8_t) c);
+      // Check if we have a complete frame
+      if (buf.size() >= 5 && buf[0] == DEVICE_ADDR && buf[1] == FC_READ) {
+        uint8_t expected_len = (uint8_t) (buf[2] + 5);
+        if (buf.size() >= expected_len) {
+          // Verify CRC
+          uint16_t rcrc = crc16(buf.data(), buf.size());
+          if (rcrc != 0) {
+            ESP_LOGW(TAG, "RX: CRC mismatch (len=%u)", (unsigned) buf.size());
+            return false;
           }
+          // Parse registers
+          uint8_t bytes = buf[2];
+          out.clear();
+          for (uint8_t i = 0; i + 1 < bytes; i += 2) {
+            uint16_t w = (uint16_t) (buf[3 + i] << 8) | buf[3 + i + 1];
+            out.push_back(w);
+          }
+          return true;
         }
       }
-      delay(1);
     }
-    // Timeout
-    if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-      ESP_LOGW(TAG, "RX: timeout waiting for response after %u attempts (cat=%u idx=%u page=%u cnt=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page, count);
-    } else {
-      ESP_LOGD(TAG, "RX: timeout attempt %u (cat=%u idx=%u page=%u) -> retry", (unsigned) attempt + 1, category, index, page);
-    }
-  next_attempt:;
+    delay(1);
   }
+  ESP_LOGW(TAG, "Modbus read timeout (cat=%u idx=%u page=%u cnt=%u)", category, index, page, count);
   return false;
 }
 
 bool WavinAHC9000::write_register(uint8_t category, uint8_t page, uint8_t index, uint16_t value) {
-  // Similar retry strategy as read_registers() with severity gating.
-  for (uint8_t attempt = 0; attempt < IO_RETRY_ATTEMPTS; attempt++) {
-    uint8_t msg[10];
-    msg[0] = DEVICE_ADDR;
-    msg[1] = FC_WRITE;
-    msg[2] = category;
-    msg[3] = index;
-    msg[4] = page;
-    msg[5] = 1;  // count
-    msg[6] = (uint8_t) (value >> 8);
-    msg[7] = (uint8_t) (value & 0xFF);
-    uint16_t crc = crc16(msg, 8);
-    msg[8] = (uint8_t) (crc & 0xFF);
-    msg[9] = (uint8_t) (crc >> 8);
+  uint8_t msg[10];
+  msg[0] = DEVICE_ADDR;
+  msg[1] = FC_WRITE;
+  msg[2] = category;
+  msg[3] = index;
+  msg[4] = page;
+  msg[5] = 1;
+  msg[6] = (uint8_t) (value >> 8);
+  msg[7] = (uint8_t) (value & 0xFF);
+  uint16_t crc_val = crc16(msg, 8);
+  msg[8] = (uint8_t) (crc_val & 0xFF);
+  msg[9] = (uint8_t) (crc_val >> 8);
 
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(true);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
-    ESP_LOGD(TAG, "TX-WR: cat=%u idx=%u page=%u val=0x%04X attempt=%u", category, index, page, (unsigned) value, (unsigned) attempt + 1);
-    this->write_array(msg, 10);
-    this->flush();
-  delayMicroseconds(250);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false);
+  // Clear any pending data in RX buffer
+  while (this->available()) {
+    this->read();
+  }
 
-    std::vector<uint8_t> buf;
-    uint32_t start = millis();
-    while (millis() - start < this->receive_timeout_ms_) {
-      while (this->available()) {
-        int c = this->read();
-        if (c < 0) break;
-        buf.push_back((uint8_t) c);
-        if (buf.size() >= 5) {
-          uint8_t expected = (uint8_t) (buf[2] + 5);
-          if (buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE && buf.size() == expected) {
-            uint16_t rcrc = crc16(buf.data(), buf.size());
-            bool ok = (rcrc == 0);
-            if (!ok) {
-              if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-                ESP_LOGW(TAG, "ACK-WR: CRC mismatch after %u attempts (cat=%u idx=%u page=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
-              } else {
-                ESP_LOGD(TAG, "ACK-WR: CRC mismatch attempt %u -> retry", (unsigned) attempt + 1);
-              }
-              goto next_wr_attempt;
-            }
-            ESP_LOGD(TAG, "ACK-WR: OK");
-            return true;
+  // Send frame with flow control
+  this->send_raw_(msg, sizeof(msg));
+
+  // Wait for ACK
+  std::vector<uint8_t> buf;
+  uint32_t start = millis();
+  while (millis() - start < this->receive_timeout_ms_) {
+    while (this->available()) {
+      int c = this->read();
+      if (c < 0) break;
+      buf.push_back((uint8_t) c);
+      if (buf.size() >= 5 && buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE) {
+        uint8_t expected_len = (uint8_t) (buf[2] + 5);
+        if (buf.size() >= expected_len) {
+          uint16_t rcrc = crc16(buf.data(), buf.size());
+          if (rcrc != 0) {
+            ESP_LOGW(TAG, "ACK-WR: CRC mismatch");
+            return false;
           }
+          return true;
         }
       }
-      delay(1);
     }
-    if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-      ESP_LOGW(TAG, "ACK-WR: timeout after %u attempts (cat=%u idx=%u page=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
-    } else {
-      ESP_LOGD(TAG, "ACK-WR: timeout attempt %u (cat=%u idx=%u page=%u) -> retry", (unsigned) attempt + 1, category, index, page);
-    }
-  next_wr_attempt:;
+    delay(1);
   }
+  ESP_LOGW(TAG, "Modbus write timeout (cat=%u idx=%u page=%u)", category, index, page);
   return false;
 }
 
 bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t index, uint16_t and_mask, uint16_t or_mask) {
-  // Similar retry strategy as write_register(); reduces spurious WARN logs.
-  for (uint8_t attempt = 0; attempt < IO_RETRY_ATTEMPTS; attempt++) {
-    uint8_t msg[12];
-    msg[0] = DEVICE_ADDR;
-    msg[1] = FC_WRITE_MASKED;
-    msg[2] = category;
-    msg[3] = index;
-    msg[4] = page;
-    msg[5] = 1;  // count
-    msg[6] = (uint8_t) (and_mask >> 8);
-    msg[7] = (uint8_t) (and_mask & 0xFF);
-    msg[8] = (uint8_t) (or_mask >> 8);
-    msg[9] = (uint8_t) (or_mask & 0xFF);
-    uint16_t crc = crc16(msg, 10);
-    msg[10] = (uint8_t) (crc & 0xFF);
-    msg[11] = (uint8_t) (crc >> 8);
+  uint8_t msg[12];
+  msg[0] = DEVICE_ADDR;
+  msg[1] = FC_WRITE_MASKED;
+  msg[2] = category;
+  msg[3] = index;
+  msg[4] = page;
+  msg[5] = 1;
+  msg[6] = (uint8_t) (and_mask >> 8);
+  msg[7] = (uint8_t) (and_mask & 0xFF);
+  msg[8] = (uint8_t) (or_mask >> 8);
+  msg[9] = (uint8_t) (or_mask & 0xFF);
+  uint16_t crc_val = crc16(msg, 10);
+  msg[10] = (uint8_t) (crc_val & 0xFF);
+  msg[11] = (uint8_t) (crc_val >> 8);
 
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(true);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
-    ESP_LOGD(TAG, "TX-WM: cat=%u idx=%u page=%u and=0x%04X or=0x%04X attempt=%u", category, index, page, (unsigned) and_mask, (unsigned) or_mask, (unsigned) attempt + 1);
-    this->write_array(msg, 12);
-    this->flush();
-  delayMicroseconds(250);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false);
+  // Clear any pending data in RX buffer
+  while (this->available()) {
+    this->read();
+  }
 
-    std::vector<uint8_t> buf;
-    uint32_t start = millis();
-    while (millis() - start < this->receive_timeout_ms_) {
-      while (this->available()) {
-        int c = this->read();
-        if (c < 0) break;
-        buf.push_back((uint8_t) c);
-        if (buf.size() >= 5) {
-          uint8_t expected = (uint8_t) (buf[2] + 5);
-          if (buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE_MASKED && buf.size() == expected) {
-            uint16_t rcrc = crc16(buf.data(), buf.size());
-            bool ok = (rcrc == 0);
-            if (!ok) {
-              if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-                ESP_LOGW(TAG, "ACK-WM: CRC mismatch after %u attempts (cat=%u idx=%u page=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
-              } else {
-                ESP_LOGD(TAG, "ACK-WM: CRC mismatch attempt %u -> retry", (unsigned) attempt + 1);
-              }
-              goto next_wm_attempt;
-            }
-            ESP_LOGD(TAG, "ACK-WM: OK");
-            return true;
+  // Send frame with flow control
+  this->send_raw_(msg, sizeof(msg));
+
+  // Wait for ACK
+  std::vector<uint8_t> buf;
+  uint32_t start = millis();
+  while (millis() - start < this->receive_timeout_ms_) {
+    while (this->available()) {
+      int c = this->read();
+      if (c < 0) break;
+      buf.push_back((uint8_t) c);
+      if (buf.size() >= 5 && buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE_MASKED) {
+        uint8_t expected_len = (uint8_t) (buf[2] + 5);
+        if (buf.size() >= expected_len) {
+          uint16_t rcrc = crc16(buf.data(), buf.size());
+          if (rcrc != 0) {
+            ESP_LOGW(TAG, "ACK-WM: CRC mismatch");
+            return false;
           }
+          return true;
         }
       }
-      delay(1);
     }
-    if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-      ESP_LOGW(TAG, "ACK-WM: timeout after %u attempts (cat=%u idx=%u page=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
-    } else {
-      ESP_LOGD(TAG, "ACK-WM: timeout attempt %u (cat=%u idx=%u page=%u) -> retry", (unsigned) attempt + 1, category, index, page);
-    }
-  next_wm_attempt:;
+    delay(1);
   }
+  ESP_LOGW(TAG, "Modbus masked write timeout (cat=%u idx=%u page=%u)", category, index, page);
   return false;
 }
 
@@ -615,469 +616,6 @@ void WavinAHC9000::normalize_channel_config(uint8_t channel, bool off) {
   }
 }
 
-void WavinAHC9000::generate_yaml_suggestion() {
-  // One-shot discovery sweep: detect active channels immediately (independent of background polling)
-  std::vector<uint8_t> active;
-  active.reserve(16);
-  // Map primary element index -> list of channels sharing it (for group climate suggestions)
-  std::map<uint16_t, std::vector<uint8_t>> primary_groups;
-  // Group detection rationale:
-  // If multiple channels report the same primary element index they physically share the same thermostat.
-  // We propose an optional aggregate climate entity using `members: [a, b, ...]` so users can control
-  // all loops for that room with a single setpoint/mode. We keep single-channel suggestions as well
-  // so they can choose either approach. Naming uses a compact pattern:
-  //   - Exactly two channels:  Zone G <a>&<b>
-  //   - More than two:        Zone G <first>-<last>
-  // Users can rename afterwards; we avoid including 'Primary' or raw element index to keep it friendly.
-  std::vector<uint16_t> regs;
-  for (uint8_t ch = 1; ch <= 16; ch++) {
-    uint8_t page = (uint8_t) (ch - 1);
-    if (this->read_registers(CAT_CHANNELS, page, CH_PRIMARY_ELEMENT, 1, regs) && regs.size() >= 1) {
-      uint16_t v = regs[0];
-      uint16_t primary_index = v & CH_PRIMARY_ELEMENT_ELEMENT_MASK;
-      bool all_tp_lost = (v & CH_PRIMARY_ELEMENT_ALL_TP_LOST_MASK) != 0;
-      if (primary_index > 0 && !all_tp_lost) {
-        active.push_back(ch);
-        this->yaml_primary_present_mask_ |= (1u << (ch - 1));
-        // Opportunistically fill cache (does not change behavior)
-        auto &st = this->channels_[ch];
-        st.primary_index = primary_index;
-        st.all_tp_lost = all_tp_lost;
-        if (primary_index > 0) {
-          primary_groups[primary_index].push_back(ch);
-        }
-        // Read basic mode + setpoint so climates look sensible in cache
-        if (this->read_registers(CAT_PACKED, page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
-          uint16_t raw_cfg = regs[0];
-          uint16_t mode_bits = raw_cfg & PACKED_CONFIGURATION_MODE_MASK;
-          bool is_off = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) || (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY_ALT);
-          st.mode = is_off ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
-          st.child_lock = (raw_cfg & PACKED_CONFIGURATION_CHILD_LOCK_MASK) != 0;
-        }
-        if (this->read_registers(CAT_PACKED, page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
-          st.setpoint_c = this->raw_to_c(regs[0]);
-        }
-        // Floor min/max (read-only) combined into one read (contiguous indices)
-        if (this->read_registers(CAT_PACKED, page, PACKED_FLOOR_MIN_TEMPERATURE, 2, regs) && regs.size() >= 2) {
-          st.floor_min_c = this->raw_to_c(regs[0]);
-          st.floor_max_c = this->raw_to_c(regs[1]);
-        }
-        // Try to read elements block to surface air/floor temps and detect floor probe immediately
-        uint8_t elem_page = (uint8_t) (primary_index - 1);
-        if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
-          st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
-          this->yaml_elem_read_mask_ |= (1u << (ch - 1));
-          if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
-            float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
-            if (ft > 1.0f && ft < 90.0f) {
-              st.floor_temp_c = ft;
-              bool threshold_hit = (ft >= 15.0f);
-              bool deviates = (!std::isnan(st.current_temp_c) && std::fabs(st.current_temp_c - ft) > 0.2f);
-              if (threshold_hit || deviates) st.has_floor_sensor = true;
-            } else {
-              st.floor_temp_c = NAN;
-            }
-          }
-          // Battery (optional)
-          if (regs.size() > ELEM_BATTERY_STATUS) {
-            uint16_t raw = regs[ELEM_BATTERY_STATUS];
-            uint8_t steps = (raw > 10) ? 10 : (uint8_t) raw;
-            st.battery_pct = (uint8_t) (steps * 10);
-          }
-        }
-      }
-    }
-  }
-
-  // Persist active channels for chunk helpers
-  this->yaml_active_channels_ = active;
-  // For now, propose child lock switches for all active channels (user can trim later)
-  this->yaml_child_lock_channels_ = active;
-
-  // Build YAML sections; determine grouped channels first so we can comment out their single climates
-  std::string yaml_climate;
-  yaml_climate += "climate:\n";
-  this->yaml_grouped_channels_.clear();
-
-  // Group climates: for any primary element shared by >1 channel, propose a members-based climate.
-  // Name strategy: "Zone G <first>-<last>" or if exactly 2 channels "Zone G <a>&<b>".
-  std::string yaml_group_climate;
-  bool any_group = false;
-  this->yaml_group_climate_groups_.clear();
-  for (auto &kv : primary_groups) {
-    const auto &chs = kv.second;
-    if (chs.size() <= 1) continue;
-    std::vector<uint8_t> sorted = chs;
-    std::sort(sorted.begin(), sorted.end());
-    if (!any_group) {
-      yaml_group_climate += "climate:\n";
-      any_group = true;
-    }
-    // Save for chunk helper
-    this->yaml_group_climate_groups_.push_back(sorted);
-    std::string name;
-    // If all members have friendly names, build a composite
-    bool all_named = true;
-    std::vector<std::string> member_names;
-    for (auto ch : sorted) {
-      auto fn = this->get_channel_friendly_name(ch);
-      if (fn.empty()) { all_named = false; break; }
-      member_names.push_back(fn);
-    }
-    if (all_named && !member_names.empty()) {
-      if (member_names.size() == 2) {
-        name = member_names[0] + " & " + member_names[1];
-      } else if (member_names.size() <= 4) {
-        // Join with commas and ' & ' before last for readability
-        for (size_t i = 0; i < member_names.size(); ++i) {
-          if (i > 0) name += (i + 1 == member_names.size() ? " & " : ", ");
-          name += member_names[i];
-        }
-      } else {
-        // Too many to list: First - Last pattern
-        name = member_names.front() + " – " + member_names.back();
-      }
-    } else {
-      if (sorted.size() == 2) name = "Zone G " + std::to_string((int) sorted[0]) + "&" + std::to_string((int) sorted[1]);
-      else name = "Zone G " + std::to_string((int) sorted.front()) + "-" + std::to_string((int) sorted.back());
-    }
-    yaml_group_climate += "  - platform: wavin_ahc9000\n";
-    yaml_group_climate += "    wavin_ahc9000_id: wavin\n";
-    yaml_group_climate += "    name: \"" + name + "\"\n";
-    yaml_group_climate += "    members: [";
-    for (size_t i = 0; i < sorted.size(); i++) {
-      yaml_group_climate += std::to_string((int) sorted[i]);
-      if (i + 1 < sorted.size()) yaml_group_climate += ", ";
-      // Mark channel as grouped
-      this->yaml_grouped_channels_.insert(sorted[i]);
-    }
-    yaml_group_climate += "]\n";
-  }
-
-  // Now append single climates (comment out those that are grouped)
-  for (auto ch : active) {
-    std::string fname = this->get_channel_friendly_name(ch);
-    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    bool grouped = this->yaml_grouped_channels_.count(ch) != 0;
-    std::string prefix = grouped ? "  #" : "  ";
-    yaml_climate += prefix + " - platform: wavin_ahc9000\n";
-    yaml_climate += prefix + "   wavin_ahc9000_id: wavin\n";
-    yaml_climate += prefix + "   name: \"" + fname + "\"\n";
-    yaml_climate += prefix + "   channel: " + std::to_string((int) ch) + "\n";
-    if (grouped) yaml_climate += prefix + "   # Commented out because channel participates in a group climate above.\n";
-  }
-
-  // Comfort climates (floor-based current temp) for channels with detected floor sensor
-  std::string yaml_comfort_climate;
-  bool any_comfort = false;
-  this->yaml_comfort_climate_channels_.clear();
-  for (auto ch : active) {
-    auto it = this->channels_.find(ch);
-    if (it != this->channels_.end() && it->second.has_floor_sensor) {
-      if (!any_comfort) {
-        yaml_comfort_climate += "climate:\n";
-        any_comfort = true;
-      }
-      std::string fname = this->get_channel_friendly_name(ch);
-      if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-      yaml_comfort_climate += "  - platform: wavin_ahc9000\n";
-      yaml_comfort_climate += "    wavin_ahc9000_id: wavin\n";
-      yaml_comfort_climate += "    name: \"" + fname + " Comfort\"\n";
-      yaml_comfort_climate += "    channel: " + std::to_string((int) ch) + "\n";
-      yaml_comfort_climate += "    use_floor_temperature: true\n";
-      this->yaml_comfort_climate_channels_.push_back(ch);
-    }
-  }  // end for(active) comfort climates loop
-  std::string yaml_batt;
-  yaml_batt += "sensor:\n";
-  for (auto ch : active) {
-    std::string fname = this->get_channel_friendly_name(ch);
-    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    yaml_batt += "  - platform: wavin_ahc9000\n";
-    yaml_batt += "    wavin_ahc9000_id: wavin\n";
-    yaml_batt += "    name: \"" + fname + " Battery\"\n";
-    yaml_batt += "    channel: " + std::to_string((int) ch) + "\n";
-    yaml_batt += "    type: battery\n";
-  }
-
-  std::string yaml_temp;
-  yaml_temp += "sensor:\n";
-  for (auto ch : active) {
-    std::string fname = this->get_channel_friendly_name(ch);
-    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    yaml_temp += "  - platform: wavin_ahc9000\n";
-    yaml_temp += "    wavin_ahc9000_id: wavin\n";
-    yaml_temp += "    name: \"" + fname + " Temperature\"\n";
-    yaml_temp += "    channel: " + std::to_string((int) ch) + "\n";
-    yaml_temp += "    type: temperature\n";
-  }
-
-  // Floor temperature / floor limit sensors omitted per new scope
-
-  std::string out = yaml_climate;
-  if (any_group) out += "\n" + yaml_group_climate;
-  out += "\n" + yaml_batt + "\n" + yaml_temp;
-  if (any_comfort) out += "\n" + yaml_comfort_climate;
-
-  // Build cached floor channel list for comfort chunk helpers (just channels with floor sensors)
-  this->yaml_floor_channels_.clear();
-  for (auto ch : active) {
-    auto it = this->channels_.find(ch);
-    if (it != this->channels_.end() && it->second.has_floor_sensor) this->yaml_floor_channels_.push_back(ch);
-  }
-
-  // Save last YAML and publish to optional text sensor (HA may truncate state >255 chars)
-  this->yaml_last_suggestion_ = out;
-  this->yaml_last_climate_ = yaml_climate;
-  this->yaml_last_battery_ = yaml_batt;
-  this->yaml_last_temperature_ = yaml_temp;
-  this->yaml_last_floor_temperature_.clear();
-  this->yaml_last_group_climate_ = yaml_group_climate;
-  if (this->yaml_text_sensor_ != nullptr) {
-    this->yaml_text_sensor_->publish_state(out);
-  }
-
-
-  // Also print with banners (and ANSI color if viewer supports it)
-  const char *CYAN = "\x1b[36m";
-  const char *GREEN = "\x1b[32m";
-  const char *RESET = "\x1b[0m";
-  ESP_LOGI(TAG, "%s==================== Wavin YAML SUGGESTION BEGIN ====================%s", CYAN, RESET);
-  {
-    // Print line by line to avoid single-message truncation in logger
-    const char *p = out.c_str();
-    const char *line_start = p;
-    while (*p) {
-      if (*p == '\n') {
-        std::string line(line_start, p - line_start);
-        ESP_LOGI(TAG, "%s%s%s", GREEN, line.c_str(), RESET);
-        ++p;
-        line_start = p;
-      } else {
-        ++p;
-      }
-    }
-    // Last line if not newline-terminated
-    if (line_start != p) {
-      std::string line(line_start, p - line_start);
-      ESP_LOGI(TAG, "%s%s%s", GREEN, line.c_str(), RESET);
-    }
-  }
-  ESP_LOGI(TAG, "%s===================== Wavin YAML SUGGESTION END =====================%s", CYAN, RESET);
-}
-
-// --- YAML chunk helpers (whole-entity, not byte size) ---
-static std::string build_climate_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
-  // Return only entity blocks, no leading 'climate:' header
-  std::string y;
-  if (chs.empty()) return y;
-  for (auto ch : chs) {
-    std::string fname = parent->get_channel_friendly_name(ch);
-    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"" + fname + "\"\n";
-    y += "  channel: " + std::to_string((int) ch) + "\n";
-  }
-  return y;
-}
-static std::string build_battery_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
-  // Return only entity blocks, no leading 'sensor:' header
-  std::string y;
-  if (chs.empty()) return y;
-  for (auto ch : chs) {
-    std::string fname = parent->get_channel_friendly_name(ch);
-    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"" + fname + " Battery\"\n";
-    y += "  channel: " + std::to_string((int) ch) + "\n";
-    y += "  type: battery\n";
-  }
-  return y;
-}
-static std::string build_temperature_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
-  // Return only entity blocks, no leading 'sensor:' header
-  std::string y;
-  if (chs.empty()) return y;
-  for (auto ch : chs) {
-    std::string fname = parent->get_channel_friendly_name(ch);
-    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"" + fname + " Temperature\"\n";
-    y += "  channel: " + std::to_string((int) ch) + "\n";
-    y += "  type: temperature\n";
-  }
-  return y;
-}
-static std::string build_floor_temperature_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
-  std::string y;
-  if (chs.empty()) return y;
-  for (auto ch : chs) {
-    std::string fname = parent->get_channel_friendly_name(ch);
-    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"" + fname + " Floor Temperature\"\n";
-    y += "  channel: " + std::to_string((int) ch) + "\n";
-    y += "  type: floor_temperature\n";
-  }
-  return y;
-}
-static std::string build_floor_min_temperature_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
-  std::string y;
-  if (chs.empty()) return y;
-  for (auto ch : chs) {
-    std::string fname = parent->get_channel_friendly_name(ch);
-    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"" + fname + " Floor Min Temperature\"\n";
-    y += "  channel: " + std::to_string((int) ch) + "\n";
-    y += "  type: floor_min_temperature\n";
-  }
-  return y;
-}
-static std::string build_floor_max_temperature_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
-  std::string y;
-  if (chs.empty()) return y;
-  for (auto ch : chs) {
-    std::string fname = parent->get_channel_friendly_name(ch);
-    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"" + fname + " Floor Max Temperature\"\n";
-    y += "  channel: " + std::to_string((int) ch) + "\n";
-    y += "  type: floor_max_temperature\n";
-  }
-  return y;
-}
-
-static std::string build_child_lock_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
-  std::string y;
-  if (chs.empty()) return y;
-  for (auto ch : chs) {
-    std::string fname = parent->get_channel_friendly_name(ch);
-    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"" + fname + " Lock\"\n";
-    y += "  channel: " + std::to_string((int) ch) + "\n";
-    // type defaults to child_lock, so we omit for brevity
-  }
-  return y;
-}
-
-static std::string build_group_climate_yaml_for(const WavinAHC9000 *parent, const std::vector<std::vector<uint8_t>> &groups) {
-  std::string y;
-  for (auto &g : groups) {
-    if (g.empty()) continue;
-    std::string name;
-    bool all_named = true;
-    std::vector<std::string> member_names;
-    for (auto ch : g) {
-      auto fn = parent->get_channel_friendly_name(ch);
-      if (fn.empty()) { all_named = false; break; }
-      member_names.push_back(fn);
-    }
-    if (all_named && !member_names.empty()) {
-      if (member_names.size() == 2) {
-        name = member_names[0] + " & " + member_names[1];
-      } else if (member_names.size() <= 4) {
-        for (size_t i = 0; i < member_names.size(); ++i) {
-          if (i > 0) name += (i + 1 == member_names.size() ? " & " : ", ");
-          name += member_names[i];
-        }
-      } else {
-        name = member_names.front() + " – " + member_names.back();
-      }
-    } else {
-      if (g.size() == 2) name = "Zone G " + std::to_string((int) g[0]) + "&" + std::to_string((int) g[1]);
-      else name = "Zone G " + std::to_string((int) g.front()) + "-" + std::to_string((int) g.back());
-    }
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"" + name + "\"\n";
-    y += "  members: [";
-    for (size_t i = 0; i < g.size(); i++) {
-      y += std::to_string((int) g[i]);
-      if (i + 1 < g.size()) y += ", ";
-    }
-    y += "]\n";
-  }
-  return y;
-}
-
-std::string WavinAHC9000::get_yaml_climate_chunk(uint8_t start, uint8_t count) const {
-  if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
-  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
-  std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
-  return build_climate_yaml_for(this, chs);
-}
-std::string WavinAHC9000::get_yaml_battery_chunk(uint8_t start, uint8_t count) const {
-  if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
-  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
-  std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
-  return build_battery_yaml_for(this, chs);
-}
-std::string WavinAHC9000::get_yaml_temperature_chunk(uint8_t start, uint8_t count) const {
-  if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
-  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
-  std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
-  return build_temperature_yaml_for(this, chs);
-}
-static std::string build_comfort_climate_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
-  std::string y;
-  if (chs.empty()) return y;
-  for (auto ch : chs) {
-    std::string fname = parent->get_channel_friendly_name(ch);
-    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
-    y += "  name: \"" + fname + " Comfort\"\n";
-    y += "  channel: " + std::to_string((int) ch) + "\n";
-    y += "  use_floor_temperature: true\n";
-  }
-  return y;
-}
-std::string WavinAHC9000::get_yaml_comfort_climate_chunk(uint8_t start, uint8_t count) const {
-  if (start >= this->yaml_comfort_climate_channels_.size() || count == 0) return std::string("");
-  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_comfort_climate_channels_.size(), (size_t) start + count);
-  std::vector<uint8_t> chs(this->yaml_comfort_climate_channels_.begin() + start, this->yaml_comfort_climate_channels_.begin() + end);
-  return build_comfort_climate_yaml_for(this, chs);
-}
-std::string WavinAHC9000::get_yaml_floor_temperature_chunk(uint8_t start, uint8_t count) const {
-  if (start >= this->yaml_floor_channels_.size() || count == 0) return std::string("");
-  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_floor_channels_.size(), (size_t) start + count);
-  std::vector<uint8_t> chs(this->yaml_floor_channels_.begin() + start, this->yaml_floor_channels_.begin() + end);
-  return build_floor_temperature_yaml_for(this, chs);
-}
-std::string WavinAHC9000::get_yaml_floor_min_temperature_chunk(uint8_t start, uint8_t count) const {
-  if (start >= this->yaml_floor_channels_.size() || count == 0) return std::string("");
-  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_floor_channels_.size(), (size_t) start + count);
-  std::vector<uint8_t> chs(this->yaml_floor_channels_.begin() + start, this->yaml_floor_channels_.begin() + end);
-  return build_floor_min_temperature_yaml_for(this, chs);
-}
-std::string WavinAHC9000::get_yaml_floor_max_temperature_chunk(uint8_t start, uint8_t count) const {
-  if (start >= this->yaml_floor_channels_.size() || count == 0) return std::string("");
-  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_floor_channels_.size(), (size_t) start + count);
-  std::vector<uint8_t> chs(this->yaml_floor_channels_.begin() + start, this->yaml_floor_channels_.begin() + end);
-  return build_floor_max_temperature_yaml_for(this, chs);
-}
-
-std::string WavinAHC9000::get_yaml_group_climate_chunk(uint8_t start, uint8_t count) const {
-  if (start >= this->yaml_group_climate_groups_.size() || count == 0) return std::string("");
-  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_group_climate_groups_.size(), (size_t) start + count);
-  std::vector<std::vector<uint8_t>> slice(this->yaml_group_climate_groups_.begin() + start, this->yaml_group_climate_groups_.begin() + end);
-  return build_group_climate_yaml_for(this, slice);
-}
-std::string WavinAHC9000::get_yaml_child_lock_chunk(uint8_t start, uint8_t count) const {
-  if (start >= this->yaml_child_lock_channels_.size() || count == 0) return std::string("");
-  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_child_lock_channels_.size(), (size_t) start + count);
-  std::vector<uint8_t> slice(this->yaml_child_lock_channels_.begin() + start, this->yaml_child_lock_channels_.begin() + end);
-  return build_child_lock_yaml_for(this, slice);
-}
 
 void WavinAHC9000::publish_updates() {
   ESP_LOGV(TAG, "Publishing updates: %u single climates, %u group climates",
@@ -1148,15 +686,6 @@ void WavinAHC9000::publish_updates() {
     auto it = this->channels_.find(ch);
     if (it != this->channels_.end()) {
       sw->publish_state(it->second.child_lock);
-    }
-  }
-
-  // YAML readiness: ready if we have discovered at least one active channel and have completed at least one element read for all of them.
-  {
-    uint16_t required = this->yaml_primary_present_mask_;
-    bool ready = (required != 0) && ((this->yaml_elem_read_mask_ & required) == required);
-    if (this->yaml_ready_binary_sensor_ != nullptr) {
-      this->yaml_ready_binary_sensor_->publish_state(ready);
     }
   }
 }

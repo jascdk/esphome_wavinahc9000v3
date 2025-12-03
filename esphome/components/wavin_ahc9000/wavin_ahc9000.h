@@ -10,6 +10,7 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <deque>
 #include <cmath>
 #include <string>
 
@@ -28,10 +29,9 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
  public:
   void set_temp_divisor(float d) { this->temp_divisor_ = d; }
   void set_receive_timeout_ms(uint32_t t) { this->receive_timeout_ms_ = t; }
-  void set_tx_enable_pin(GPIOPin *p) { this->tx_enable_pin_ = p; }
-  // Optional half-duplex RS485 DE/RE (flow control) pin. If provided we drive HIGH to transmit and LOW to receive.
-  void set_flow_control_pin(GPIOPin *p) { this->flow_control_pin_ = p; }
+  void set_flow_control_pin(GPIOPin *pin) { this->flow_control_pin_ = pin; }
   void set_poll_channels_per_cycle(uint8_t n) { this->poll_channels_per_cycle_ = n == 0 ? 1 : (n > 16 ? 16 : n); }
+  void set_transactions_per_cycle(uint8_t n) { this->transactions_per_cycle_ = n == 0 ? 1 : n; }
   void set_allow_mode_writes(bool v) { this->allow_mode_writes_ = v; }
   bool get_allow_mode_writes() const { return this->allow_mode_writes_; }
   // Friendly name support (optional per-channel overrides for generated YAML)
@@ -69,38 +69,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void request_status();
   void request_status_channel(uint8_t ch_index);
   void normalize_channel_config(uint8_t channel, bool off);
-  void generate_yaml_suggestion();
-  void set_yaml_ready_binary_sensor(binary_sensor::BinarySensor *s) { this->yaml_ready_binary_sensor_ = s; }
-  void set_yaml_text_sensor(text_sensor::TextSensor *s) { this->yaml_text_sensor_ = s; }
   // Debug helper to dump registers for a channel (to identify floor min/max addresses)
   void dump_channel_floor_limits(uint8_t channel);
-  // Accessor for last generated YAML (for HA notifications via lambda)
-  std::string get_yaml_suggestion() const { return this->yaml_last_suggestion_; }
-  std::string get_yaml_climate() const { return this->yaml_last_climate_; }
-  std::string get_yaml_battery() const { return this->yaml_last_battery_; }
-  std::string get_yaml_temperature() const { return this->yaml_last_temperature_; }
-  std::string get_yaml_floor_temperature() const { return this->yaml_last_floor_temperature_; }
-  std::string get_yaml_group_climate() const { return this->yaml_last_group_climate_; }
-  // Group climate chunk helper (returns entity blocks without 'climate:' header)
-  std::string get_yaml_group_climate_chunk(uint8_t start, uint8_t count) const;
-  // Chunk helpers: return YAML entity blocks (complete entities only, NO section header)
-  // start is 0-based entity index among discovered active channels; count is number of entities to include
-  std::string get_yaml_climate_chunk(uint8_t start, uint8_t count) const;
-  std::string get_yaml_comfort_climate_chunk(uint8_t start, uint8_t count) const;
-  std::string get_yaml_battery_chunk(uint8_t start, uint8_t count) const;
-  std::string get_yaml_temperature_chunk(uint8_t start, uint8_t count) const;
-  std::string get_yaml_floor_temperature_chunk(uint8_t start, uint8_t count) const;
-  std::string get_yaml_floor_min_temperature_chunk(uint8_t start, uint8_t count) const;
-  std::string get_yaml_floor_max_temperature_chunk(uint8_t start, uint8_t count) const;
-  // New: child lock switch YAML chunk (returns switch entities)
-  std::string get_yaml_child_lock_chunk(uint8_t start, uint8_t count) const;
-  uint8_t get_yaml_active_count() const { return (uint8_t) this->yaml_active_channels_.size(); }
-  bool is_channel_grouped(uint8_t ch) const { return this->yaml_grouped_channels_.count(ch) != 0; }
-  bool is_channel_child_locked(uint8_t ch) const {
-    auto it = this->channels_.find(ch);
-    if (it == this->channels_.end()) return false;
-    return it->second.child_lock;
-  }
 
   // Data access
   float get_channel_current_temp(uint8_t channel) const;
@@ -112,11 +82,57 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   climate::ClimateAction get_channel_action(uint8_t channel) const;
 
  protected:
-  // Low-level protocol helpers (dkjonas framing)
-  bool read_registers(uint8_t category, uint8_t page, uint8_t index, uint8_t count, std::vector<uint16_t> &out);
-  bool write_register(uint8_t category, uint8_t page, uint8_t index, uint16_t value);
-  // Masked write: apply (reg & and_mask) | or_mask semantics
-  bool write_masked_register(uint8_t category, uint8_t page, uint8_t index, uint16_t and_mask, uint16_t or_mask);
+    enum class RequestKind : uint8_t {
+      READ_PRIMARY_ELEMENT,
+      READ_CONFIGURATION,
+      READ_SETPOINT,
+      READ_FLOOR_LIMITS,
+      READ_TIMER_EVENT,
+      READ_ELEMENT_BLOCK,
+      WRITE_SETPOINT,
+      WRITE_MODE_BASELINE,
+      WRITE_CHILD_LOCK,
+      WRITE_FLOOR_MIN,
+      WRITE_FLOOR_MAX,
+    };
+
+    struct PendingRequest {
+      uint32_t id{0};
+      RequestKind kind{RequestKind::READ_PRIMARY_ELEMENT};
+      uint8_t channel{0};
+      uint8_t category{0};
+      uint8_t page{0};
+      uint8_t index{0};
+      uint8_t count{0};
+      bool is_write{false};
+      uint16_t value{0};
+      uint16_t and_mask{0};
+      uint16_t or_mask{0};
+      uint32_t enqueue_ms{0};
+      bool channel_step_request{false};
+      bool urgent{false};
+    };
+
+    bool queue_read_request(uint8_t channel, uint8_t category, uint8_t page, uint8_t index, uint8_t count,
+                            RequestKind kind, bool channel_step_request, bool urgent=false);
+    bool queue_write_request(uint8_t channel, uint8_t category, uint8_t page, uint8_t index, uint16_t value,
+                             RequestKind kind, bool urgent=false);
+    bool queue_masked_write_request(uint8_t channel, uint8_t category, uint8_t page, uint8_t index,
+                                    uint16_t and_mask, uint16_t or_mask, RequestKind kind, bool urgent=false);
+    void handle_request_success(uint32_t id, const std::vector<uint8_t> &payload);
+    void handle_request_timeout(uint32_t id);
+    void finalize_channel_request(uint8_t page_index);
+    void process_read_result(const PendingRequest &req, const std::vector<uint16_t> &regs);
+    void process_write_result(const PendingRequest &req);
+    void service_channel(uint8_t channel, uint8_t &transactions_budget);
+    void process_urgent_queue(uint8_t &transactions_budget);
+    void cleanup_timed_out_requests();
+
+    // Transitional synchronous helpers (still used throughout state machine)
+    bool read_registers(uint8_t category, uint8_t page, uint8_t index, uint8_t count, std::vector<uint16_t> &out);
+    bool write_register(uint8_t category, uint8_t page, uint8_t index, uint16_t value);
+    bool write_masked_register(uint8_t category, uint8_t page, uint8_t index, uint16_t and_mask, uint16_t or_mask);
+    void send_raw_(const uint8_t *data, size_t len);
 
   void publish_updates();
 
@@ -152,20 +168,6 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::map<uint8_t, sensor::Sensor *> floor_max_temperature_sensors_;
   std::map<uint8_t, sensor::Sensor *> comfort_setpoint_sensors_;
   std::map<uint8_t, switch_::Switch *> child_lock_switches_;
-  binary_sensor::BinarySensor *yaml_ready_binary_sensor_{nullptr};
-  text_sensor::TextSensor *yaml_text_sensor_{nullptr};
-  std::string yaml_last_suggestion_{};
-  std::string yaml_last_climate_{};
-  std::string yaml_last_battery_{};
-  std::string yaml_last_temperature_{};
-  std::string yaml_last_floor_temperature_{};
-  std::string yaml_last_group_climate_{}; // group climates section (optional)
-  std::vector<std::vector<uint8_t>> yaml_group_climate_groups_; // channel groups used for chunking
-  std::vector<uint8_t> yaml_active_channels_{}; // active channels discovered during last YAML generation
-  std::vector<uint8_t> yaml_floor_channels_{}; // subset with detected floor sensors during last YAML generation
-  std::vector<uint8_t> yaml_comfort_climate_channels_{}; // same as floor subset; for comfort climate generation
-  std::vector<uint8_t> yaml_child_lock_channels_{}; // channels to suggest child lock switches for
-  std::set<uint8_t> yaml_grouped_channels_; // channels that are members of any generated group
   std::vector<std::string> channel_friendly_names_; // 1-based index mapping (size >=17)
   std::vector<uint8_t> active_channels_;
   std::map<uint8_t, climate::ClimateMode> desired_mode_; // desired mode to reconcile after refresh
@@ -175,17 +177,17 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   uint32_t last_poll_ms_{0};
   uint32_t receive_timeout_ms_{1000};
   uint32_t suspend_polling_until_{0};
-  GPIOPin *tx_enable_pin_{nullptr};
-  GPIOPin *flow_control_pin_{nullptr};
   uint8_t poll_channels_per_cycle_{2};
+  uint8_t transactions_per_cycle_{4};
   uint8_t next_active_index_{0};
   uint8_t channel_step_[16] = {0};
+  bool channel_waiting_[16] = {false};
+  uint8_t channel_priority_rounds_[16] = {0};
   std::vector<uint8_t> urgent_channels_{}; // channels scheduled for immediate refresh on next update
   bool allow_mode_writes_{true};
-
-  // YAML readiness tracking: which channels are present and which had an element block read at least once
-  uint16_t yaml_primary_present_mask_{0};  // bit i set when channel (i+1) has a primary element and no tp lost
-  uint16_t yaml_elem_read_mask_{0};        // bit i set when we've successfully read the element block for channel (i+1)
+  GPIOPin *flow_control_pin_{nullptr};
+  std::map<uint32_t, PendingRequest> inflight_requests_;
+  uint32_t next_request_id_{1};
 
   // Protocol constants
   static constexpr uint8_t DEVICE_ADDR = 0x01;
@@ -225,13 +227,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   static constexpr uint16_t PACKED_CONFIGURATION_STRICT_UNLOCK_MASK = 0x0078; // bits 3..6 (avoid touching mode bits 0..2)
   static constexpr uint16_t PACKED_CONFIGURATION_CHILD_LOCK_MASK = 0x0800; // child lock bit (0x4000->0x4800)
 
-  // I/O reliability: number of attempts for read/write before escalating to WARN
-  static constexpr uint8_t IO_RETRY_ATTEMPTS = 2; // first failure logged at DEBUG, final at WARN
 };
 
-// Simple dedicated switch subclass for child lock control. Avoids relying on codegen lambdas
-// that reference a specific hub variable name. The state is optimistic; an urgent refresh
-// scheduled by write_channel_child_lock() will reconcile if the write failed.
 class WavinChildLockSwitch : public switch_::Switch {
  public:
   void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
@@ -305,20 +302,6 @@ class WavinZoneClimate : public climate::Climate, public Component {
   bool use_floor_temperature_{false};
 };
 
-// Repair button removed; use API service to normalize
-
 }  // namespace wavin_ahc9000
 }  // namespace esphome
 
-// --- Child lock extension placeholders (to integrate in subsequent patch) ---
-// NOTE: Full integration attempted earlier but patching context mismatched. The following
-// defines will be merged into the class on next edit cycle.
-// Child lock bit observed: PACKED_CONFIGURATION (index 0x07) changes from 0x4000 to 0x4800 when enabled => bit 0x0800.
-// Planned additions inside WavinAHC9000:
-//   - bool is_channel_child_locked(uint8_t ch) const;
-//   - void write_channel_child_lock(uint8_t ch, bool enable);
-//   - ChannelState::bool child_lock; // per-channel cache
-//   - std::map<uint8_t, switch_::Switch*> child_lock_switches_;
-//   - static constexpr uint16_t PACKED_CONFIGURATION_CHILD_LOCK_MASK = 0x0800;
-// Parsing: when reading PACKED_CONFIGURATION, set child_lock = (raw_cfg & mask) != 0.
-// Writing: read-modify-write preserving mode bits and baseline 0x4000 prefix.
