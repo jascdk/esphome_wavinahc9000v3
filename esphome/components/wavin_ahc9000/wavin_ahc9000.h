@@ -29,6 +29,9 @@ enum class ModuleProfile : uint8_t {
   MODULE_USTEPPER = 1,
 };
 
+static constexpr ModuleProfile MODULE_DEFAULT = ModuleProfile::MODULE_DEFAULT;
+static constexpr ModuleProfile MODULE_USTEPPER = ModuleProfile::MODULE_USTEPPER;
+
 class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
  public:
   void set_temp_divisor(float d) { this->temp_divisor_ = d; }

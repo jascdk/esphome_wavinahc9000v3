@@ -935,6 +935,8 @@ void WavinAHC9000::publish_updates() {
     }
   }
 
+}
+
 
 void WavinAHC9000::clear_stale_rx_() {
   if (!this->flush_rx_before_tx_) return;
