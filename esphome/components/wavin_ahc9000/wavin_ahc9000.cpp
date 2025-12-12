@@ -823,16 +823,27 @@ void WavinAHC9000::generate_yaml_suggestion() {
   sections.push_back(climate_ss.str());
   if (have_sensor_entries) sections.push_back(sensor_ss.str());
 
-  // Also print with banners (and ANSI color if viewer supports it)
-  const char *CYAN = "\x1b[36m";
-  const char *GREEN = "\x1b[32m";
-  const char *RESET = "\x1b[0m";
-  ESP_LOGI(TAG, "%s==================== Wavin YAML SUGGESTION BEGIN ====================%s", CYAN, RESET);
+  // Print with conservative chunking to avoid logger line-length truncation.
+  ESP_LOGI(TAG, "==================== Wavin YAML SUGGESTION BEGIN ====================");
   for (const auto &block : sections) {
     if (block.empty()) continue;
-    ESP_LOGI(TAG, "%s%s%s", GREEN, block.c_str(), RESET);
+    std::istringstream stream(block);
+    std::string line;
+    std::string chunk;
+    constexpr size_t CHUNK_MAX = 200;  // keep well under ESPHome logger chunk limit
+    while (std::getline(stream, line)) {
+      if (!chunk.empty()) chunk += '\n';
+      chunk += line;
+      if (chunk.size() >= CHUNK_MAX) {
+        ESP_LOGI(TAG, "%s", chunk.c_str());
+        chunk.clear();
+      }
+    }
+    if (!chunk.empty()) {
+      ESP_LOGI(TAG, "%s", chunk.c_str());
+    }
   }
-  ESP_LOGI(TAG, "%s===================== Wavin YAML SUGGESTION END =====================%s", CYAN, RESET);
+  ESP_LOGI(TAG, "===================== Wavin YAML SUGGESTION END =====================");
 }
 
 void WavinAHC9000::publish_updates() {
