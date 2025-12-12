@@ -29,6 +29,7 @@ uart:
 wavin_ahc9000:
   id: wavin
   uart_id: uart_wavin
+  # module: ustepper  # enable extended guard timings for uStepper RS485 hats
   # Regular polling interval; optionally lower temporarily for quicker discovery
   update_interval: 5s
   # Optional: speed up initial discovery (uncomment briefly)

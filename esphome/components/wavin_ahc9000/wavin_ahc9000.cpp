@@ -32,12 +32,40 @@ void WavinAHC9000::setup() {
     uint32_t parent_baud = this->parent_->get_baud_rate();
     if (parent_baud != 0) baud = parent_baud;
   }
-  // Assume 11 bits per frame (start + 8 data + parity slot + stop) and leave 2 frame times as guard.
+  if (this->tx_enable_pin_ != nullptr) {
+    this->tx_enable_pin_->setup();
+    this->tx_enable_pin_->digital_write(false);
+  }
+  if (this->flow_control_pin_ != nullptr) {
+    this->flow_control_pin_->setup();
+    this->flow_control_pin_->digital_write(false);
+  }
+
+  // Assume 11 bits per frame (start + 8 data + parity slot + stop)
   const uint32_t bits_per_frame = 11;
-  uint32_t frame_us = (bits_per_frame * 1000000UL + baud - 1) / baud;  // ceil division
-  // Guard for two full frames (covers slower baud rates and UART flush variance)
-  this->post_tx_guard_us_ = std::max<uint32_t>(250, frame_us * 2);
-  ESP_LOGCONFIG(TAG, "Wavin AHC9000 hub setup (baud=%u guard=%uus)", (unsigned) baud, (unsigned) this->post_tx_guard_us_);
+  const uint32_t frame_us = (bits_per_frame * 1000000UL + baud - 1) / baud;  // ceil division
+
+  switch (this->module_profile_) {
+    case ModuleProfile::MODULE_USTEPPER: {
+      // uStepper RS485 hat needs extra guard time; approximate 12-byte frame plus slack.
+      const uint32_t worst_case_bytes = 12;
+      const uint32_t computed_guard = frame_us * worst_case_bytes + frame_us * 2;
+      this->pre_tx_delay_us_ = std::max<uint32_t>(frame_us / 2, 100);
+      this->post_tx_guard_us_ = std::max<uint32_t>(computed_guard, 2500);
+      this->flush_rx_before_tx_ = true;
+      break;
+    }
+    case ModuleProfile::MODULE_DEFAULT:
+    default:
+      this->pre_tx_delay_us_ = 0;
+      this->post_tx_guard_us_ = std::max<uint32_t>(250, frame_us * 2);
+      this->flush_rx_before_tx_ = false;
+      break;
+  }
+
+  const char *profile = (this->module_profile_ == ModuleProfile::MODULE_USTEPPER) ? "ustepper" : "default";
+  ESP_LOGCONFIG(TAG, "Wavin AHC9000 hub setup (baud=%u module=%s guard=%uus pre=%uus)",
+                (unsigned) baud, profile, (unsigned) this->post_tx_guard_us_, (unsigned) this->pre_tx_delay_us_);
 }
 void WavinAHC9000::loop() {}
 
@@ -310,16 +338,11 @@ bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index,
     msg[6] = crc & 0xFF;
     msg[7] = crc >> 8;
 
-  // Direction control: if a dedicated flow control pin (DE/RE) is provided, drive HIGH to enable TX.
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(true);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+    this->prepare_for_tx_();
     ESP_LOGD(TAG, "TX: addr=0x%02X fc=0x%02X cat=%u idx=%u page=%u cnt=%u attempt=%u", msg[0], msg[1], category, index, page, count, (unsigned) attempt + 1);
     this->write_array(msg, 8);
     this->flush();
-  // Allow line to settle before releasing driver; guard scales with baud rate.
-  delayMicroseconds(this->post_tx_guard_us_);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false); // back to RX ASAP
+    this->finish_tx_();
 
     std::vector<uint8_t> buf;
     uint32_t start = millis();
@@ -380,14 +403,11 @@ bool WavinAHC9000::write_register(uint8_t category, uint8_t page, uint8_t index,
     msg[8] = (uint8_t) (crc & 0xFF);
     msg[9] = (uint8_t) (crc >> 8);
 
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(true);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+    this->prepare_for_tx_();
     ESP_LOGD(TAG, "TX-WR: cat=%u idx=%u page=%u val=0x%04X attempt=%u", category, index, page, (unsigned) value, (unsigned) attempt + 1);
     this->write_array(msg, 10);
     this->flush();
-  delayMicroseconds(this->post_tx_guard_us_);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false);
+    this->finish_tx_();
 
     std::vector<uint8_t> buf;
     uint32_t start = millis();
@@ -444,14 +464,11 @@ bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t
     msg[10] = (uint8_t) (crc & 0xFF);
     msg[11] = (uint8_t) (crc >> 8);
 
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(true);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+    this->prepare_for_tx_();
     ESP_LOGD(TAG, "TX-WM: cat=%u idx=%u page=%u and=0x%04X or=0x%04X attempt=%u", category, index, page, (unsigned) and_mask, (unsigned) or_mask, (unsigned) attempt + 1);
     this->write_array(msg, 12);
     this->flush();
-  delayMicroseconds(this->post_tx_guard_us_);
-  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
-  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false);
+    this->finish_tx_();
 
     std::vector<uint8_t> buf;
     uint32_t start = millis();
@@ -918,6 +935,27 @@ void WavinAHC9000::publish_updates() {
     }
   }
 
+
+void WavinAHC9000::clear_stale_rx_() {
+  if (!this->flush_rx_before_tx_) return;
+  while (this->available()) {
+    int c = this->read();
+    if (c < 0) break;
+  }
+}
+
+void WavinAHC9000::prepare_for_tx_() {
+  this->clear_stale_rx_();
+  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(true);
+  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(true);
+  if (this->pre_tx_delay_us_ > 0) delayMicroseconds(this->pre_tx_delay_us_);
+}
+
+void WavinAHC9000::finish_tx_() {
+  delayMicroseconds(this->post_tx_guard_us_);
+  if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
+  if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false);
+}
 }
 
 float WavinAHC9000::get_channel_current_temp(uint8_t channel) const {

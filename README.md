@@ -68,6 +68,7 @@ wavin_ahc9000:
   id: wavin
   uart_id: uart_wavin
   update_interval: 5s
+  # module: ustepper  # enable extended RS485 guard timings for uStepper hats
   # Optional: half-duplex RS485 direction control (DE/RE). Only include ONE of these if needed.
   # flow_control_pin: GPIO23  # Preferred unified DE/RE control (driven HIGH only while transmitting)
   # tx_enable_pin: GPIO23     # Legacy always-on style driver enable (kept for compatibility)
@@ -117,6 +118,7 @@ wavin_ahc9000:
   uart_id: uart_wavin
   update_interval: 5s
   # flow_control_pin: GPIO23 # (optional) direction control
+  # module: ustepper  # optional: slower RS485 turnaround for uStepper hardware
   channel_01_friendly_name: "Bedroom"
   channel_02_friendly_name: "Living Room"
   channel_03_friendly_name: "Kitchen"
@@ -146,6 +148,8 @@ sensor:
     name: "Bedroom Temperature"
     channel: 1
     type: temperature
+
+If you're using the uStepper RS485 expansion (commonly paired with ESP32-C3 boards), add `module: ustepper` under the `wavin_ahc9000:` block. This enables the longer guard times and RX flushing from the timing-optimized branch to prevent truncated acknowledgements.
 ```
 
 ### Comfort Climate Example

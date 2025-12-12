@@ -16,6 +16,10 @@ This guide explains how to connect the Wavin AHC 9000 (Jablotron AC‑116) exter
 
 Provide at most one of the two. If your interface auto-manages half-duplex, you can omit both entirely.
 
+### Module Profiles
+- Default (implicit): Works for most MAX3485/75176 breakouts.
+- `module: ustepper`: Adds additional pre/post transmit guard delays and clears the RX buffer before writes. Use this when you interface the controller through the uStepper RS485 add-on – it prevents truncated acknowledgements on ESP32-C3 boards.
+
 ## Step 1: Base ESPHome Config
 Start with a lean configuration that includes logging and a helper service to trigger the YAML dump:
 
@@ -47,6 +51,7 @@ wavin_ahc9000:
   id: wavin
   uart_id: uart_wavin
   update_interval: 5s
+  # module: ustepper  # enable extended RS485 guard timings for uStepper RS485 hats
   # Optional direction control (choose at most one)
   # flow_control_pin: GPIO23
   # tx_enable_pin: GPIO23
@@ -133,6 +138,7 @@ Need to add a room or rename a zone? Just call the `dump_wavin_yaml` service aga
 | Group names look generic (`Zone G`) | Add friendly names for each member channel and re-run the service. |
 | Logged YAML still shows commented single climates | That is intentional; uncomment any channel you want to manage individually even if it participates in a group climate. |
 | Bus warnings or repeated retries | Re-check wiring, RS‑485 termination, and (if used) direction-control GPIO. Temporarily set `logger:` to DEBUG for deeper insight. |
+| Missing replies on uStepper hardware | Add `module: ustepper` under `wavin_ahc9000:` to slow the RS485 turnaround timing. |
 
 ## Optional: Quick Console Trigger
 When connected via `esphome logs`, you can trigger the dump interactively:

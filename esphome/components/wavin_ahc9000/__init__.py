@@ -11,6 +11,7 @@ AUTO_LOAD = ["climate", "uart", "sensor", "number", "switch", "button"]
 ns = cg.esphome_ns.namespace("wavin_ahc9000")
 WavinAHC9000 = ns.class_("WavinAHC9000", cg.PollingComponent, uart.UARTDevice)
 WavinZoneClimate = ns.class_("WavinZoneClimate", climate.Climate, cg.Component)
+ModuleProfile = ns.enum("ModuleProfile")
 
 CONF_UART_ID = "uart_id"
 CONF_TX_ENABLE_PIN = "tx_enable_pin"
@@ -19,6 +20,12 @@ CONF_TEMP_DIVISOR = "temp_divisor"
 CONF_RECEIVE_TIMEOUT_MS = "receive_timeout_ms"
 CONF_POLL_CHANNELS_PER_CYCLE = "poll_channels_per_cycle"
 CONF_ALLOW_MODE_WRITES = "allow_mode_writes"
+CONF_MODULE = "module"
+
+MODULE_OPTIONS = {
+    "default": ModuleProfile.MODULE_DEFAULT,
+    "ustepper": ModuleProfile.MODULE_USTEPPER,
+}
 
 _FRIENDLY_NAME_KEYS = {
     cv.Optional(f"channel_{i:02d}_friendly_name"): cv.string for i in range(1, 17)
@@ -35,6 +42,7 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_RECEIVE_TIMEOUT_MS, default=1000): cv.positive_int,
             cv.Optional(CONF_POLL_CHANNELS_PER_CYCLE, default=2): cv.int_range(min=1, max=16),
             cv.Optional(CONF_ALLOW_MODE_WRITES, default=True): cv.boolean,
+            cv.Optional(CONF_MODULE, default="default"): cv.enum(MODULE_OPTIONS, upper=False),
             **_FRIENDLY_NAME_KEYS,
         }
     )
@@ -62,6 +70,8 @@ async def to_code(config):
         cg.add(var.set_poll_channels_per_cycle(config[CONF_POLL_CHANNELS_PER_CYCLE]))
     if CONF_ALLOW_MODE_WRITES in config:
         cg.add(var.set_allow_mode_writes(config[CONF_ALLOW_MODE_WRITES]))
+    if CONF_MODULE in config:
+        cg.add(var.set_module_profile(config[CONF_MODULE]))
 
     # Parse channel friendly names
     for key, value in config.items():

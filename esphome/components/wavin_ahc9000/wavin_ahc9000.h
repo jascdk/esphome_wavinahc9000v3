@@ -24,6 +24,11 @@ class WavinChildLockSwitch;
 class WavinYamlDumpButton;
 class WavinRepairButton;
 
+enum class ModuleProfile : uint8_t {
+  MODULE_DEFAULT = 0,
+  MODULE_USTEPPER = 1,
+};
+
 class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
  public:
   void set_temp_divisor(float d) { this->temp_divisor_ = d; }
@@ -31,6 +36,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void set_tx_enable_pin(GPIOPin *p) { this->tx_enable_pin_ = p; }
   // Optional half-duplex RS485 DE/RE (flow control) pin. If provided we drive HIGH to transmit and LOW to receive.
   void set_flow_control_pin(GPIOPin *p) { this->flow_control_pin_ = p; }
+  void set_module_profile(ModuleProfile profile) { this->module_profile_ = profile; }
   void set_poll_channels_per_cycle(uint8_t n) { this->poll_channels_per_cycle_ = n == 0 ? 1 : (n > 16 ? 16 : n); }
   void set_allow_mode_writes(bool v) { this->allow_mode_writes_ = v; }
   bool get_allow_mode_writes() const { return this->allow_mode_writes_; }
@@ -95,6 +101,9 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   bool write_masked_register(uint8_t category, uint8_t page, uint8_t index, uint16_t and_mask, uint16_t or_mask);
 
   void publish_updates();
+  void prepare_for_tx_();
+  void finish_tx_();
+  void clear_stale_rx_();
 
   // Helpers
   float raw_to_c(float raw) const { return raw / this->temp_divisor_; }
@@ -139,12 +148,15 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   uint32_t suspend_polling_until_{0};
   GPIOPin *tx_enable_pin_{nullptr};
   GPIOPin *flow_control_pin_{nullptr};
+  ModuleProfile module_profile_{ModuleProfile::MODULE_DEFAULT};
   uint8_t poll_channels_per_cycle_{2};
   uint8_t next_active_index_{0};
   uint8_t channel_step_[16] = {0};
   std::vector<uint8_t> urgent_channels_{}; // channels scheduled for immediate refresh on next update
   bool allow_mode_writes_{true};
+  uint32_t pre_tx_delay_us_{0};
   uint32_t post_tx_guard_us_{300};
+  bool flush_rx_before_tx_{false};
 
   // Protocol constants
   static constexpr uint8_t DEVICE_ADDR = 0x01;
