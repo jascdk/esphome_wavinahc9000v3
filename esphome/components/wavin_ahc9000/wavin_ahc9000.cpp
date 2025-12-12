@@ -776,13 +776,13 @@ void WavinAHC9000::generate_yaml_suggestion() {
     std::string fname = this->get_channel_friendly_name(ch);
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
     bool grouped = grouped_channels.count(ch) != 0;
-    std::string prefix = grouped ? "  #" : "  ";
-    climate_ss << prefix << " - platform: wavin_ahc9000\n";
-    climate_ss << prefix << "   wavin_ahc9000_id: wavin\n";
-    climate_ss << prefix << "   name: \"" << fname << "\"\n";
-    climate_ss << prefix << "   channel: " << (int) ch << "\n";
+    const char *prefix = grouped ? "  # " : "  ";
+    climate_ss << prefix << "- platform: wavin_ahc9000\n";
+    climate_ss << prefix << "  wavin_ahc9000_id: wavin\n";
+    climate_ss << prefix << "  name: \"" << fname << "\"\n";
+    climate_ss << prefix << "  channel: " << (int) ch << "\n";
     if (grouped)
-      climate_ss << prefix << "   # Commented out because this channel participates in a group climate below.\n";
+      climate_ss << "  # Commented out because this channel participates in a group climate below.\n";
   }
 
     if (have_group_section) climate_ss << group_ss.str();
