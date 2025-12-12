@@ -958,7 +958,6 @@ void WavinAHC9000::finish_tx_() {
   if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
   if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false);
 }
-}
 
 float WavinAHC9000::get_channel_current_temp(uint8_t channel) const {
   auto it = this->channels_.find(channel);
