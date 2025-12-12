@@ -13,18 +13,16 @@ Integrates the Wavin AHC 9000 (a.k.a. Jablotron AC-116) floor heating controller
 | Battery sensors | ✅ | Per channel (0–100%) |
 | Temperature sensors | ✅ | Per channel ambient temperature |
 | Floor probe detection | ✅ | Auto-detects plausible floor sensor (>1°C & <90°C) |
-| Friendly names per channel | ✅ | `channel_XX_friendly_name` config; used in generated YAML |
-| YAML suggestion + chunk sensors | ✅ | Service driven; chunks safe for HA text sensor size limits |
+| Friendly names per channel | ✅ | `channel_XX_friendly_name` config; used in logged YAML suggestions |
+| YAML suggestion (log output) | ✅ | Call `generate_yaml_suggestion()` to print entity templates |
 | Commented single climates for grouped members | ✅ | Keeps originals (commented) for reference |
-| Jinja stitching templates | ✅ | Provided (`jinjatemplate.txt` and `jinja_examples.j2`) |
-| Readiness binary sensor | ✅ | Optional `yaml_ready` type |
 | Robust retry & polling pacing | ✅ | 2-attempt read/write retry logic |
 | Child lock (per channel) | ✅ | Exposed as switch; toggles controller LOCK bit |
 
 ## Project Status / Vibe-Coding Disclaimer
 This is a "vibe-coding" / fast-iteration community project:
 * Reverse-engineered protocol pieces may evolve; some registers/assumptions could change as more hubs are tested.
-* YAML generation format is considered stable enough for use, but minor cosmetic tweaks (indentation, naming heuristics, commenting strategy) can still occur.
+* Logged YAML suggestion format is considered stable enough for use, but minor cosmetic tweaks (indentation, naming heuristics, commenting strategy) can still occur.
 * Floor/comfort logic, group naming rules, and friendly-name composition are pragmatic rather than final standards.
 * Expect occasional refactors prioritizing clarity and onboarding experience over strict backward compatibility of generated suggestions.
 * If you pin this as a GitHub external component for production, review diffs before updating — especially around write behaviors.
@@ -33,28 +31,23 @@ Contributions (bug reports, captures, PRs) are welcome. Please include firmware 
 
 ## Quick Start (Final Config Example)
 ### TL;DR Workflow
-1. Flash a minimal generation config with the `yaml_generator` package enabled.
-2. Wait until (optional) `yaml_ready` binary sensor = ON (or ~60s).
-3. Call service: `esphome.<node>_wavin_publish_yaml_text_sensors`.
-4. Open `jinjatemplate.txt` (or `jinja_examples.j2`) in HA Template editor; render combined YAML.
-5. Copy generated entity blocks into your permanent node YAML.
-6. Comment out the generator package include.
-7. Recompile & upload clean firmware.
+1. Flash a standard config (see example below) with ESPHome logging enabled.
+2. Let the hub poll for ~30–60 seconds until channel data looks stable.
+3. Trigger `generate_yaml_suggestion()` (e.g. via an ESPHome API service) to print the recommended YAML to the log.
+4. Copy the logged entity blocks into your permanent node YAML and adjust names as needed.
+5. Recompile & upload the updated firmware.
 
 Flowchart (Mermaid):
 ```mermaid
 flowchart TD
-  A[Start / Flash Generation Config] --> B{Discovery Stable?}
+  A[Start / Flash Config] --> B{Discovery Stable?}
   B -- No --> A
-  B -- Yes --> C[Call publish YAML text sensors service]
-  C --> D[Chunk Sensors Populated]
-  D --> E[Render Jinja Template]
-  E --> F[Copy Entities to Final YAML]
-  F --> G[Disable Generator Package]
-  G --> H[Rebuild & Upload]
-  H --> I{Need Changes Later?}
-  I -- Yes --> A
-  I -- No --> J[Done]
+  B -- Yes --> C[Trigger generate_yaml_suggestion()]
+  C --> D[Copy YAML from ESPHome Log]
+  D --> E[Update Node Configuration]
+  E --> F{Need Updates Later?}
+  F -- Yes --> C
+  F -- No --> G[Done]
 ```
 
 Static diagram (SVG):
@@ -241,23 +234,6 @@ Single climates that belong to a generated group are still included in the full 
 * Temporarily raise `poll_channels_per_cycle` to accelerate discovery, then revert.
 * Floor probe detection waits for plausible readings; early YAML generation may omit comfort climates—re-run later.
 
-## Services
-| Service | Purpose |
-|---------|---------|
-| `wavin_generate_yaml` | Build latest suggestion internally (does not push chunks) |
-| `wavin_publish_yaml_text_sensors` | Generate then publish chunk sensor states (skips if no channels yet) |
-| `wavin_notify_yaml_chunks` | (Reserved / minimal) triggers generation only |
-| `wavin_strict_heat` | Example: force baseline config (see source) |
-
-Chunk sensors follow naming like `sensor.wavin_yaml_climate_1` etc. See `jinjatemplate.txt` / `jinja_examples.j2` for stitching.
-
-## Jinja Templates
-Two forms are provided:
-* `jinjatemplate.txt` – annotated human-readable reference.
-* `jinja_examples.j2` – syntax-highlight friendly, drop into HA template editor (remove outer comments as needed).
-
-Copy the rendered template output into your final ESPHome YAML, adjust names, then remove the generator package.
-
 ## Floor & Comfort Climates
 Comfort climates appear only for channels with a detected floor probe. Names append `Comfort` to the friendly name (or `Zone N`).
 
@@ -343,59 +319,34 @@ Child lock blocks manual thermostat adjustments. Ensure you have reliable automa
 ## Commented Single Climates for Group Members
 When a group climate is generated, its member single-channel climates remain in the full suggestion but are commented out with an explanatory line. This keeps copy/paste flexible (just uncomment if you later decide to manage them individually).
 
-## YAML Generator Workflow Overview
+## Generating YAML Suggestions (Log Output)
 
-This component can generate suggested YAML for discovered channels. Because Home Assistant limits text sensor sizes, the suggestion is also exposed as chunked text sensors (each containing only entity blocks, without section headers). Use the included `jinjatemplate.txt` to stitch them back together.
+The component still discovers active channels and can draft entity definitions for you. Instead of exposing them through Home Assistant text sensors, the suggestion is now printed directly to the ESPHome log when you call `generate_yaml_suggestion()`.
 
-### Enabling the Generator
-
-Files involved:
-- `packages/yaml_generator.on.yaml`  (full set of text sensors + services)
-- `packages/yaml_generator.off.yaml` (empty stub – mostly for clarity)
-- `packages/yaml_generator.yaml`     (documentation only)
-
-In your node YAML add (uncomment while needed):
+Add a small API helper (or call from the ESPHome console) to trigger the dump:
 
 ```yaml
-packages:
-  # Enable during onboarding to generate YAML suggestions
-  yaml_generator: !include packages/yaml_generator.on.yaml
-  # Optional: debug register dump service
-  # wavin_debug: !include packages/wavin_debug_services.yaml
+logger:
+  level: INFO  # or DEBUG if you want verbose polling details
+
+api:
+  services:
+    - service: dump_wavin_yaml
+      then:
+        - lambda: 'id(wavin).generate_yaml_suggestion();'
 ```
 
-After you've copied the generated YAML into your permanent config, simply comment the `yaml_generator` line again to remove the helper entities and services.
+After the initial discovery phase (typically 30–60 seconds), call `esphome.<node_name>_dump_wavin_yaml` from Home Assistant or the ESPHome dashboard. The log output is wrapped between:
 
-### Generating & Collecting the YAML
-1. Recompile & upload with the generator enabled.
-2. In Home Assistant call the service: `esphome.<node_name>_wavin_publish_yaml_text_sensors` (or first `wavin_generate_yaml`).
-3. Inspect sensors:
-   - `sensor.wavin_yaml_climate_1` .. `sensor.wavin_yaml_climate_8`
-   - `sensor.wavin_yaml_comfort_climate_1` .. (if comfort climates apply)
-   - `sensor.wavin_yaml_temperature_1` .. `sensor.wavin_yaml_temperature_8`
-   - `sensor.wavin_yaml_battery_1` .. `sensor.wavin_yaml_battery_8`
-   - `sensor.wavin_yaml_floor_temperature_1` .. (only if floor probes detected)
-4. Optionally view the single full suggestion sensor: `sensor.wavin_yaml_suggestion` (may be truncated for very large outputs in HA – use chunks when in doubt).
-5. Open `jinjatemplate.txt` and use the “All-in-one” Jinja macro to stitch chunks back into a cohesive YAML block (adds section headers + indentation).
-
-### Why Not a Substitution Toggle?
-Early versions used a substitution (`YAML_GEN_STATE`) to switch between on/off files. Remote GitHub package includes cannot use substitutions in the `files:` list, leading to confusion. The project now favors a simple comment/uncomment pattern for reliability both locally and in remote includes.
-
-### Floor Probe Driven Additions / Comfort
-If at least one floor probe is plausibly detected (>1.0°C and <90°C after startup), the generator adds the relevant floor temperature sensor entries. If you trigger the service very early and they are missing, trigger again later.
-
-### Readiness Indicator
-You can optionally add a `yaml_ready` binary sensor to know when discovery has progressed enough to get stable YAML suggestions:
-
-```yaml
-binary_sensor:
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    type: yaml_ready
-    name: "Wavin YAML Ready"
+```
+==================== Wavin YAML SUGGESTION BEGIN ====================
+... entity blocks ...
+===================== Wavin YAML SUGGESTION END =====================
 ```
 
-Once you have migrated the suggested YAML entities you want, disable the generator include to declutter.
+Copy the blocks you need (climates, sensors, child lock switches) into your node YAML. Friendly names supplied via `channel_XX_friendly_name` are used to build readable entity names, and single-channel climates belonging to a group remain commented for easy opt-in. Re-run the service any time you rename channels or wire new zones; the output always reflects the latest discovery state.
+
+Tip: if a floor probe or new thermostat has not reported yet, run the service again after a few minutes so the suggestion can include comfort climates and associated sensors.
 
 ### Comfort Setpoint (Read-Only) Sensor
 
@@ -428,24 +379,6 @@ sensor:
 This reads element index 0x05 (same scaling as air). A plausibility filter (>1..90°C) is applied; invalid or missing values result in the sensor staying unavailable.
 
 Automatic detection: The component now marks a channel as having a floor sensor only after at least one plausible, non-zero floor reading is observed (> 1.0°C and < 90°C). Until then, any configured `floor_temperature` sensor will remain unavailable (rather than showing 0.0). The YAML generation services (`_wavin_generate_yaml` / `_wavin_publish_yaml_text_sensors`) will include floor temperature sensor entity suggestions only for channels where a valid floor probe has already been detected. If you generate YAML immediately after boot and a floor probe wasn’t yet detected, just trigger the service again later after some polling cycles.
-
-Chunked YAML: If at least one floor probe is detected, an additional chunk set is exposed via the `get_yaml_floor_temperature_chunk` API internally (usable in future text sensors). If you add corresponding text sensors (e.g. `wavin_yaml_floor_temperature_1..8`), you can stitch them with the same Jinja approach as other sensor chunks by adding an extra `sensor:` header and their content.
-
-### YAML Readiness Indicator (binary_sensor)
-
-To know when it's reasonable to generate and copy the suggested YAML, a readiness indicator is exposed as a binary sensor. It turns on once the hub has:
-- Discovered at least one active channel (primary element present and no TP lost)
-- Completed at least one full element block read for all discovered channels
-
-Add this to your config if desired:
-
-```yaml
-binary_sensor:
-  - platform: wavin_ahc9000
-    wavin_ahc9000_id: wavin
-    type: yaml_ready
-    name: "Wavin YAML Ready"
-```
 
 ## Future Ideas
 * Optional toggle to suppress (instead of comment) grouped member single climates in generated YAML.

@@ -8,8 +8,7 @@
     "uart",
     "climate",
     "sensor",
-    "text_sensor",
-    "binary_sensor",
+    "number",
     "switch"
   ],
   "codeowners": ["@heinekmadsen"],

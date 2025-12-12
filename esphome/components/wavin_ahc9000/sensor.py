@@ -36,7 +36,6 @@ async def to_code(config):
         cg.add(sens.set_icon(ICON_BATTERY))
         cg.add(sens.set_accuracy_decimals(0))
         cg.add(hub.add_channel_battery_sensor(config[CONF_CHANNEL], sens))
-    # yaml_ready numeric sensor removed in favor of binary_sensor platform
     else:
         # temperature & comfort_setpoint share temperature meta
         cg.add(sens.set_device_class(DEVICE_CLASS_TEMPERATURE))

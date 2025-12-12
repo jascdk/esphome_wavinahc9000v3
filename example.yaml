@@ -35,20 +35,13 @@ wavin_ahc9000:
   # poll_channels_per_cycle: 8
   # update_interval: 2s
   allow_mode_writes: false
-  # Optional per-channel friendly names used in generated YAML suggestions and chunk sensors
+  # Optional per-channel friendly names used in the logged YAML suggestion output
   # Provide any subset (1..16). Missing entries fallback to "Zone N".
   channel_01_friendly_name: "Bedroom"
   channel_02_friendly_name: "Living Room"
   channel_03_friendly_name: "Kitchen"
   # channel_04_friendly_name: "Office"
   # ... add more as needed up to channel_16_friendly_name
-
-# Onboarding helper package (manual enable/disable)
-# Uncomment the yaml_generator include while you want the YAML suggestion sensors & services.
-# Comment it again later to keep the runtime entity list small.
-packages:
-  # yaml_generator: !include packages/yaml_generator.yaml
-  # wavin_debug: !include packages/wavin_debug_services.yaml
 
 climate:
   # Single channel climate using channel 1 (friendly name -> Bedroom)
