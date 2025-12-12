@@ -4,6 +4,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <sstream>
 
 namespace esphome {
 namespace wavin_ahc9000 {
@@ -697,23 +698,19 @@ void WavinAHC9000::generate_yaml_suggestion() {
   }
 
   // Build YAML sections; determine grouped channels first so we can comment out their single climates
-  std::string yaml_climate;
-  yaml_climate += "climate:\n";
+  std::ostringstream climate_ss;
+  climate_ss << "climate:\n";
   std::set<uint8_t> grouped_channels;
 
   // Group climates: for any primary element shared by >1 channel, propose a members-based climate.
   // Name strategy: "Zone G <first>-<last>" or if exactly 2 channels "Zone G <a>&<b>".
-  std::string yaml_group_climate;
-  bool any_group = false;
+  std::ostringstream group_ss;
+  bool have_group_section = false;
   for (const auto &kv : primary_groups) {
     const auto &chs = kv.second;
     if (chs.size() <= 1) continue;
     std::vector<uint8_t> sorted = chs;
     std::sort(sorted.begin(), sorted.end());
-    if (!any_group) {
-      yaml_group_climate += "climate:\n";
-      any_group = true;
-    }
     std::string name;
     // If all members have friendly names, build a composite
     bool all_named = true;
@@ -740,17 +737,21 @@ void WavinAHC9000::generate_yaml_suggestion() {
       if (sorted.size() == 2) name = "Zone G " + std::to_string((int) sorted[0]) + "&" + std::to_string((int) sorted[1]);
       else name = "Zone G " + std::to_string((int) sorted.front()) + "-" + std::to_string((int) sorted.back());
     }
-    yaml_group_climate += "  - platform: wavin_ahc9000\n";
-    yaml_group_climate += "    wavin_ahc9000_id: wavin\n";
-    yaml_group_climate += "    name: \"" + name + "\"\n";
-    yaml_group_climate += "    members: [";
+    if (!have_group_section) {
+      group_ss << "\n  # Group climates (shared thermostat across members)\n";
+      have_group_section = true;
+    }
+    group_ss << "  - platform: wavin_ahc9000\n";
+    group_ss << "    wavin_ahc9000_id: wavin\n";
+    group_ss << "    name: \"" << name << "\"\n";
+    group_ss << "    members: [";
     for (size_t i = 0; i < sorted.size(); i++) {
-      yaml_group_climate += std::to_string((int) sorted[i]);
-      if (i + 1 < sorted.size()) yaml_group_climate += ", ";
+      group_ss << (int) sorted[i];
+      if (i + 1 < sorted.size()) group_ss << ", ";
       // Mark channel as grouped
       grouped_channels.insert(sorted[i]);
     }
-    yaml_group_climate += "]\n";
+    group_ss << "]\n";
   }
 
   // Now append single climates (comment out those that are grouped)
@@ -759,88 +760,77 @@ void WavinAHC9000::generate_yaml_suggestion() {
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
     bool grouped = grouped_channels.count(ch) != 0;
     std::string prefix = grouped ? "  #" : "  ";
-    yaml_climate += prefix + " - platform: wavin_ahc9000\n";
-    yaml_climate += prefix + "   wavin_ahc9000_id: wavin\n";
-    yaml_climate += prefix + "   name: \"" + fname + "\"\n";
-    yaml_climate += prefix + "   channel: " + std::to_string((int) ch) + "\n";
-    if (grouped) yaml_climate += prefix + "   # Commented out because channel participates in a group climate above.\n";
+    climate_ss << prefix << " - platform: wavin_ahc9000\n";
+    climate_ss << prefix << "   wavin_ahc9000_id: wavin\n";
+    climate_ss << prefix << "   name: \"" << fname << "\"\n";
+    climate_ss << prefix << "   channel: " << (int) ch << "\n";
+    if (grouped)
+      climate_ss << prefix << "   # Commented out because this channel participates in a group climate below.\n";
   }
 
+    if (have_group_section) climate_ss << group_ss.str();
+
   // Comfort climates (floor-based current temp) for channels with detected floor sensor
-  std::string yaml_comfort_climate;
-  bool any_comfort = false;
+  bool have_comfort_section = false;
   for (auto ch : active) {
     auto it = this->channels_.find(ch);
     if (it != this->channels_.end() && it->second.has_floor_sensor) {
-      if (!any_comfort) {
-        yaml_comfort_climate += "climate:\n";
-        any_comfort = true;
-      }
       std::string fname = this->get_channel_friendly_name(ch);
       if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-      yaml_comfort_climate += "  - platform: wavin_ahc9000\n";
-      yaml_comfort_climate += "    wavin_ahc9000_id: wavin\n";
-      yaml_comfort_climate += "    name: \"" + fname + " Comfort\"\n";
-      yaml_comfort_climate += "    channel: " + std::to_string((int) ch) + "\n";
-      yaml_comfort_climate += "    use_floor_temperature: true\n";
+      if (!have_comfort_section) {
+        climate_ss << "\n  # Comfort climates (floor temperature as the current reading)\n";
+        have_comfort_section = true;
+      }
+      climate_ss << "  - platform: wavin_ahc9000\n";
+      climate_ss << "    wavin_ahc9000_id: wavin\n";
+      climate_ss << "    name: \"" << fname << " Comfort\"\n";
+      climate_ss << "    channel: " << (int) ch << "\n";
+      climate_ss << "    use_floor_temperature: true\n";
       // Logged suggestion only; no additional bookkeeping required.
     }
   }  // end for(active) comfort climates loop
-  std::string yaml_batt;
-  yaml_batt += "sensor:\n";
-  for (auto ch : active) {
-    std::string fname = this->get_channel_friendly_name(ch);
-    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    yaml_batt += "  - platform: wavin_ahc9000\n";
-    yaml_batt += "    wavin_ahc9000_id: wavin\n";
-    yaml_batt += "    name: \"" + fname + " Battery\"\n";
-    yaml_batt += "    channel: " + std::to_string((int) ch) + "\n";
-    yaml_batt += "    type: battery\n";
+  climate_ss << std::endl;
+
+  std::ostringstream sensor_ss;
+  sensor_ss << "sensor:\n";
+  bool have_sensor_entries = false;
+  if (!active.empty()) {
+    have_sensor_entries = true;
+    sensor_ss << "  # Battery level sensors\n";
+    for (auto ch : active) {
+      std::string fname = this->get_channel_friendly_name(ch);
+      if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
+      sensor_ss << "  - platform: wavin_ahc9000\n";
+      sensor_ss << "    wavin_ahc9000_id: wavin\n";
+      sensor_ss << "    name: \"" << fname << " Battery\"\n";
+      sensor_ss << "    channel: " << (int) ch << "\n";
+      sensor_ss << "    type: battery\n";
+    }
+    sensor_ss << "\n  # Air temperature sensors\n";
+    for (auto ch : active) {
+      std::string fname = this->get_channel_friendly_name(ch);
+      if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
+      sensor_ss << "  - platform: wavin_ahc9000\n";
+      sensor_ss << "    wavin_ahc9000_id: wavin\n";
+      sensor_ss << "    name: \"" << fname << " Temperature\"\n";
+      sensor_ss << "    channel: " << (int) ch << "\n";
+      sensor_ss << "    type: temperature\n";
+    }
   }
+  sensor_ss << std::endl;
 
-  std::string yaml_temp;
-  yaml_temp += "sensor:\n";
-  for (auto ch : active) {
-    std::string fname = this->get_channel_friendly_name(ch);
-    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    yaml_temp += "  - platform: wavin_ahc9000\n";
-    yaml_temp += "    wavin_ahc9000_id: wavin\n";
-    yaml_temp += "    name: \"" + fname + " Temperature\"\n";
-    yaml_temp += "    channel: " + std::to_string((int) ch) + "\n";
-    yaml_temp += "    type: temperature\n";
-  }
-
-  // Floor temperature / floor limit sensors omitted per new scope
-
-  std::string out = yaml_climate;
-  if (any_group) out += "\n" + yaml_group_climate;
-  out += "\n" + yaml_batt + "\n" + yaml_temp;
-  if (any_comfort) out += "\n" + yaml_comfort_climate;
+  std::vector<std::string> sections;
+  sections.push_back(climate_ss.str());
+  if (have_sensor_entries) sections.push_back(sensor_ss.str());
 
   // Also print with banners (and ANSI color if viewer supports it)
   const char *CYAN = "\x1b[36m";
   const char *GREEN = "\x1b[32m";
   const char *RESET = "\x1b[0m";
   ESP_LOGI(TAG, "%s==================== Wavin YAML SUGGESTION BEGIN ====================%s", CYAN, RESET);
-  {
-    // Print line by line to avoid single-message truncation in logger
-    const char *p = out.c_str();
-    const char *line_start = p;
-    while (*p) {
-      if (*p == '\n') {
-        std::string line(line_start, p - line_start);
-        ESP_LOGI(TAG, "%s%s%s", GREEN, line.c_str(), RESET);
-        ++p;
-        line_start = p;
-      } else {
-        ++p;
-      }
-    }
-    // Last line if not newline-terminated
-    if (line_start != p) {
-      std::string line(line_start, p - line_start);
-      ESP_LOGI(TAG, "%s%s%s", GREEN, line.c_str(), RESET);
-    }
+  for (const auto &block : sections) {
+    if (block.empty()) continue;
+    ESP_LOGI(TAG, "%s%s%s", GREEN, block.c_str(), RESET);
   }
   ESP_LOGI(TAG, "%s===================== Wavin YAML SUGGESTION END =====================%s", CYAN, RESET);
 }
