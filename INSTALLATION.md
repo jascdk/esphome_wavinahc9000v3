@@ -110,6 +110,12 @@ sensor:
     name: "Bedroom Battery"
     channel: 1
     type: battery
+
+switch:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Bedroom Child Lock"
+    channel: 1
 ...
 ===================== Wavin YAML SUGGESTION END =====================
 ```

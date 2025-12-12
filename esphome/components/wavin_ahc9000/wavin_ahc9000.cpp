@@ -836,9 +836,27 @@ void WavinAHC9000::generate_yaml_suggestion() {
   }
   sensor_ss << std::endl;
 
+  std::ostringstream switch_ss;
+  switch_ss << "switch:\n";
+  bool have_switch_entries = false;
+  if (!active.empty()) {
+    have_switch_entries = true;
+    switch_ss << "  # Child lock switches\n";
+    for (auto ch : active) {
+      std::string fname = this->get_channel_friendly_name(ch);
+      if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
+      switch_ss << "  - platform: wavin_ahc9000\n";
+      switch_ss << "    wavin_ahc9000_id: wavin\n";
+      switch_ss << "    name: \"" << fname << " Child Lock\"\n";
+      switch_ss << "    channel: " << (int) ch << "\n";
+    }
+  }
+  switch_ss << std::endl;
+
   std::vector<std::string> sections;
   sections.push_back(climate_ss.str());
   if (have_sensor_entries) sections.push_back(sensor_ss.str());
+  if (have_switch_entries) sections.push_back(switch_ss.str());
 
   // Print with conservative chunking to avoid logger line-length truncation.
   ESP_LOGI(TAG, "==================== Wavin YAML SUGGESTION BEGIN ====================");
