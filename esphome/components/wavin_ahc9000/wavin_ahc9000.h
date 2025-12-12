@@ -3,6 +3,7 @@
 #include "esphome/components/climate/climate.h"
 #include "esphome/components/uart/uart.h"
 #include "esphome/components/switch/switch.h"
+#include "esphome/components/button/button.h"
 #include "esphome/core/component.h"
 
 #include <vector>
@@ -14,11 +15,14 @@
 namespace esphome {
 namespace sensor { class Sensor; }
 namespace switch_ { class Switch; }
+namespace button { class Button; }
 namespace wavin_ahc9000 {
 
 // Forward
 class WavinZoneClimate;
 class WavinChildLockSwitch;
+class WavinYamlDumpButton;
+class WavinRepairButton;
 
 class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
  public:
@@ -187,6 +191,26 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
 // Simple dedicated switch subclass for child lock control. Avoids relying on codegen lambdas
 // that reference a specific hub variable name. The state is optimistic; an urgent refresh
 // scheduled by write_channel_child_lock() will reconcile if the write failed.
+class WavinRepairButton : public button::Button {
+ public:
+  void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
+  void set_channel(uint8_t ch) { this->channel_ = ch; }
+  void set_extended(bool v) { this->extended_ = v; }
+  void set_aggressive(bool v) { this->aggressive_ = v; }
+  void set_normalize(bool v) { this->normalize_ = v; }
+  void set_normalize_off(bool v) { this->normalize_off_ = v; }
+
+ protected:
+  void press_action() override;
+
+  WavinAHC9000 *parent_{nullptr};
+  uint8_t channel_{0};
+  bool extended_{false};
+  bool aggressive_{false};
+  bool normalize_{false};
+  bool normalize_off_{false};
+};
+
 class WavinChildLockSwitch : public switch_::Switch {
  public:
   void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
@@ -201,6 +225,16 @@ class WavinChildLockSwitch : public switch_::Switch {
   }
   WavinAHC9000 *parent_{nullptr};
   uint8_t channel_{0};
+};
+
+class WavinYamlDumpButton : public button::Button {
+ public:
+  void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
+
+ protected:
+  void press_action() override;
+
+  WavinAHC9000 *parent_{nullptr};
 };
 
 // Inline helpers for configuring sensors

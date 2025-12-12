@@ -9,7 +9,8 @@
     "climate",
     "sensor",
     "number",
-    "switch"
+    "switch",
+    "button"
   ],
   "codeowners": ["@heinekmadsen"],
   "esphome": ">=2024.6.0"

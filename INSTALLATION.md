@@ -80,6 +80,14 @@ Call the helper service you added above:
 
 - Home Assistant → Developer Tools → Services → `esphome.wavin_node_dump_wavin_yaml` (adjust for your node name), or
 - ESPHome CLI: `esphome service wavin-node dump_wavin_yaml`.
+- Prefer a dashboard button? Add this and press it from the Lovelace UI:
+
+```yaml
+button:
+  - platform: wavin_ahc9000
+    wavin_ahc9000_id: wavin
+    name: "Dump Wavin YAML"
+```
 
 The ESPHome log prints the suggestion between banner lines, for example:
 

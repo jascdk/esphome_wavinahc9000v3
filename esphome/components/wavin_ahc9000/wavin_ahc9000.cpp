@@ -1120,5 +1120,43 @@ void WavinZoneClimate::update_from_parent() {
   this->publish_state();
 }
 
+void WavinRepairButton::press_action() {
+  if (this->parent_ == nullptr) {
+    ESP_LOGW(TAG, "Repair button pressed but parent hub is missing");
+    return;
+  }
+  if (this->channel_ < 1 || this->channel_ > 16) {
+    ESP_LOGW(TAG, "Repair button channel %u is out of range", (unsigned) this->channel_);
+    return;
+  }
+  ESP_LOGI(TAG, "Repair button pressed for channel %u", (unsigned) this->channel_);
+
+  if (this->normalize_ || this->normalize_off_) {
+    bool off = this->normalize_off_;
+    ESP_LOGI(TAG, "Normalize request: channel=%u off=%s", (unsigned) this->channel_, off ? "true" : "false");
+    this->parent_->normalize_channel_config(this->channel_, off);
+  }
+
+  if (this->extended_) {
+    ESP_LOGI(TAG, "Enabling strict mode writes for channel %u", (unsigned) this->channel_);
+    this->parent_->set_strict_mode_write(this->channel_, true);
+  }
+
+  if (this->aggressive_) {
+    ESP_LOGI(TAG, "Aggressive refresh requested for channel %u", (unsigned) this->channel_);
+    this->parent_->refresh_channel_now(this->channel_);
+  } else {
+    this->parent_->request_status_channel(this->channel_);
+  }
+}
+
+void WavinYamlDumpButton::press_action() {
+  if (this->parent_ != nullptr) {
+    this->parent_->generate_yaml_suggestion();
+  } else {
+    ESP_LOGW(TAG, "YAML dump button pressed but parent hub is missing");
+  }
+}
+
 }  // namespace wavin_ahc9000
 }  // namespace esphome
