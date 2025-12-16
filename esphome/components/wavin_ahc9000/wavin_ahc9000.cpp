@@ -5,11 +5,37 @@
 #include <cmath>
 #include <algorithm>
 #include <sstream>
+#include <iomanip>
 
 namespace esphome {
 namespace wavin_ahc9000 {
 
 static const char *const TAG = "wavin_ahc9000";
+
+static const char *module_profile_to_str(ModuleProfile profile) {
+  switch (profile) {
+    case ModuleProfile::MODULE_USTEPPER:
+      return "ustepper";
+    case ModuleProfile::MODULE_ESP32C3:
+      return "esp32_c3";
+    case ModuleProfile::MODULE_DEFAULT:
+    default:
+      return "default";
+  }
+}
+
+static std::string hex_preview(const std::vector<uint8_t> &buf, size_t max_bytes = 8) {
+  if (buf.empty()) return std::string();
+  std::ostringstream ss;
+  ss << std::hex << std::setfill('0');
+  size_t n = std::min(buf.size(), max_bytes);
+  for (size_t i = 0; i < n; ++i) {
+    if (i != 0) ss << ' ';
+    ss << std::setw(2) << static_cast<unsigned>(buf[i]);
+  }
+  if (buf.size() > n) ss << " ...";
+  return ss.str();
+}
 
 
 // Simple Modbus CRC16 (0xA001 poly)
@@ -70,6 +96,7 @@ void WavinAHC9000::setup() {
       this->pre_tx_delay_us_ = std::max<uint32_t>(frame_us / 2, 120);
       this->post_tx_guard_us_ = std::max<uint32_t>(computed_guard, 2500);
       this->flush_rx_before_tx_ = true;
+      if (this->receive_timeout_ms_ < 1500) this->receive_timeout_ms_ = 1500;
       profile = "esp32_c3";
       break;
     }
@@ -300,7 +327,16 @@ void WavinAHC9000::update() {
   this->publish_updates();
 }
 
-void WavinAHC9000::dump_config() { ESP_LOGCONFIG(TAG, "Wavin AHC9000 (UART test read)"); }
+void WavinAHC9000::dump_config() {
+  ESP_LOGCONFIG(TAG, "Wavin AHC9000 (UART test read)");
+  ESP_LOGCONFIG(TAG, "  Module profile: %s", module_profile_to_str(this->module_profile_));
+  ESP_LOGCONFIG(TAG, "  TX pre-delay: %uus, post-guard: %uus", (unsigned) this->pre_tx_delay_us_,
+                (unsigned) this->post_tx_guard_us_);
+  ESP_LOGCONFIG(TAG, "  Receive timeout: %ums", (unsigned) this->receive_timeout_ms_);
+  ESP_LOGCONFIG(TAG, "  Flush RX before TX: %s", this->flush_rx_before_tx_ ? "yes" : "no");
+  if (this->flow_control_pin_ != nullptr) ESP_LOGCONFIG(TAG, "  Flow control pin configured");
+  if (this->tx_enable_pin_ != nullptr) ESP_LOGCONFIG(TAG, "  TX enable pin configured");
+}
 void WavinAHC9000::dump_channel_floor_limits(uint8_t channel) {
   if (channel < 1 || channel > 16) return;
   uint8_t page = (uint8_t) (channel - 1);
@@ -396,7 +432,14 @@ bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index,
     }
     // Timeout
     if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-      ESP_LOGW(TAG, "RX: timeout waiting for response after %u attempts (cat=%u idx=%u page=%u cnt=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page, count);
+      if (!buf.empty()) {
+        std::string preview = hex_preview(buf);
+        ESP_LOGW(TAG, "RX: timeout waiting for response after %u attempts (cat=%u idx=%u page=%u cnt=%u, partial=%u bytes: %s)",
+                 (unsigned) IO_RETRY_ATTEMPTS, category, index, page, count, (unsigned) buf.size(), preview.c_str());
+      } else {
+        ESP_LOGW(TAG, "RX: timeout waiting for response after %u attempts (cat=%u idx=%u page=%u cnt=%u)",
+                 (unsigned) IO_RETRY_ATTEMPTS, category, index, page, count);
+      }
     } else {
       ESP_LOGD(TAG, "RX: timeout attempt %u (cat=%u idx=%u page=%u) -> retry", (unsigned) attempt + 1, category, index, page);
     }
@@ -455,7 +498,14 @@ bool WavinAHC9000::write_register(uint8_t category, uint8_t page, uint8_t index,
       delay(1);
     }
     if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-      ESP_LOGW(TAG, "ACK-WR: timeout after %u attempts (cat=%u idx=%u page=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
+      if (!buf.empty()) {
+        std::string preview = hex_preview(buf);
+        ESP_LOGW(TAG, "ACK-WR: timeout after %u attempts (cat=%u idx=%u page=%u, partial=%u bytes: %s)",
+                 (unsigned) IO_RETRY_ATTEMPTS, category, index, page, (unsigned) buf.size(), preview.c_str());
+      } else {
+        ESP_LOGW(TAG, "ACK-WR: timeout after %u attempts (cat=%u idx=%u page=%u)",
+                 (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
+      }
     } else {
       ESP_LOGD(TAG, "ACK-WR: timeout attempt %u (cat=%u idx=%u page=%u) -> retry", (unsigned) attempt + 1, category, index, page);
     }
@@ -516,7 +566,14 @@ bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t
       delay(1);
     }
     if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-      ESP_LOGW(TAG, "ACK-WM: timeout after %u attempts (cat=%u idx=%u page=%u)", (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
+      if (!buf.empty()) {
+        std::string preview = hex_preview(buf);
+        ESP_LOGW(TAG, "ACK-WM: timeout after %u attempts (cat=%u idx=%u page=%u, partial=%u bytes: %s)",
+                 (unsigned) IO_RETRY_ATTEMPTS, category, index, page, (unsigned) buf.size(), preview.c_str());
+      } else {
+        ESP_LOGW(TAG, "ACK-WM: timeout after %u attempts (cat=%u idx=%u page=%u)",
+                 (unsigned) IO_RETRY_ATTEMPTS, category, index, page);
+      }
     } else {
       ESP_LOGD(TAG, "ACK-WM: timeout attempt %u (cat=%u idx=%u page=%u) -> retry", (unsigned) attempt + 1, category, index, page);
     }
@@ -976,10 +1033,13 @@ void WavinAHC9000::publish_updates() {
 
 void WavinAHC9000::clear_stale_rx_() {
   if (!this->flush_rx_before_tx_) return;
+  size_t dropped = 0;
   while (this->available()) {
     int c = this->read();
     if (c < 0) break;
+    dropped++;
   }
+  if (dropped > 0) ESP_LOGVV(TAG, "RX flush dropped %u byte(s)", (unsigned) dropped);
 }
 
 void WavinAHC9000::prepare_for_tx_() {
