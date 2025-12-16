@@ -19,6 +19,7 @@ CONF_FLOW_CONTROL_PIN = "flow_control_pin"
 CONF_TEMP_DIVISOR = "temp_divisor"
 CONF_RECEIVE_TIMEOUT_MS = "receive_timeout_ms"
 CONF_POLL_CHANNELS_PER_CYCLE = "poll_channels_per_cycle"
+CONF_TRANSACTIONS_PER_CYCLE = "transactions_per_cycle"
 CONF_ALLOW_MODE_WRITES = "allow_mode_writes"
 CONF_MODULE = "module"
 
@@ -42,6 +43,7 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_TEMP_DIVISOR, default=10.0): cv.positive_float,
             cv.Optional(CONF_RECEIVE_TIMEOUT_MS, default=1000): cv.positive_int,
             cv.Optional(CONF_POLL_CHANNELS_PER_CYCLE, default=2): cv.int_range(min=1, max=16),
+            cv.Optional(CONF_TRANSACTIONS_PER_CYCLE, default=4): cv.int_range(min=0, max=32),
             cv.Optional(CONF_ALLOW_MODE_WRITES, default=True): cv.boolean,
             cv.Optional(CONF_MODULE, default="default"): cv.enum(MODULE_OPTIONS, upper=False),
             **_FRIENDLY_NAME_KEYS,
@@ -69,6 +71,8 @@ async def to_code(config):
         cg.add(var.set_receive_timeout_ms(config[CONF_RECEIVE_TIMEOUT_MS]))
     if CONF_POLL_CHANNELS_PER_CYCLE in config:
         cg.add(var.set_poll_channels_per_cycle(config[CONF_POLL_CHANNELS_PER_CYCLE]))
+    if CONF_TRANSACTIONS_PER_CYCLE in config:
+        cg.add(var.set_transactions_per_cycle(config[CONF_TRANSACTIONS_PER_CYCLE]))
     if CONF_ALLOW_MODE_WRITES in config:
         cg.add(var.set_allow_mode_writes(config[CONF_ALLOW_MODE_WRITES]))
     if CONF_MODULE in config:

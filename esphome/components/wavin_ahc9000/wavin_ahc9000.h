@@ -43,6 +43,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void set_flow_control_pin(GPIOPin *p) { this->flow_control_pin_ = p; }
   void set_module_profile(ModuleProfile profile) { this->module_profile_ = profile; }
   void set_poll_channels_per_cycle(uint8_t n) { this->poll_channels_per_cycle_ = n == 0 ? 1 : (n > 16 ? 16 : n); }
+  void set_transactions_per_cycle(uint8_t n) { this->transactions_per_cycle_ = (n == 0) ? 0 : n; }
   void set_allow_mode_writes(bool v) { this->allow_mode_writes_ = v; }
   bool get_allow_mode_writes() const { return this->allow_mode_writes_; }
   // Friendly name support (optional per-channel overrides for generated YAML)
@@ -155,6 +156,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   GPIOPin *flow_control_pin_{nullptr};
   ModuleProfile module_profile_{ModuleProfile::MODULE_DEFAULT};
   uint8_t poll_channels_per_cycle_{2};
+  uint8_t transactions_per_cycle_{4};
   uint8_t next_active_index_{0};
   uint8_t channel_step_[16] = {0};
   std::vector<uint8_t> urgent_channels_{}; // channels scheduled for immediate refresh on next update

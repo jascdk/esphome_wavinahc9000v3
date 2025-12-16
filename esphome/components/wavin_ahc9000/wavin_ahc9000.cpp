@@ -134,6 +134,18 @@ void WavinAHC9000::update() {
 
   // Process any urgent channels first (scheduled due to a write)
   std::vector<uint16_t> regs;
+  uint8_t transactions_remaining = this->transactions_per_cycle_;
+  auto require_budget = [&](uint8_t *requeue_channel) -> bool {
+    if (this->transactions_per_cycle_ == 0) return true;
+    if (transactions_remaining == 0) {
+      if (requeue_channel != nullptr) {
+        this->urgent_channels_.insert(this->urgent_channels_.begin(), *requeue_channel);
+      }
+      return false;
+    }
+    transactions_remaining--;
+    return true;
+  };
   uint8_t urgent_processed = 0;
   while (!this->urgent_channels_.empty() && urgent_processed < this->poll_channels_per_cycle_) {
     uint8_t ch = this->urgent_channels_.front();
@@ -141,6 +153,7 @@ void WavinAHC9000::update() {
     uint8_t ch_page = (uint8_t) (ch - 1);
     auto &st = this->channels_[ch];
     // Perform a compact refresh sequence for the channel
+    if (!require_budget(&ch)) goto publish;
     if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
       uint16_t raw_cfg = regs[0];
       uint16_t mode_bits = raw_cfg & PACKED_CONFIGURATION_MODE_MASK;
@@ -158,6 +171,7 @@ void WavinAHC9000::update() {
           uint16_t new_bits = (want == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
           uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (new_bits & PACKED_CONFIGURATION_MODE_MASK));
           ESP_LOGW(TAG, "Reconciling mode for ch=%u cur=0x%04X next=0x%04X", (unsigned) ch, (unsigned) current, (unsigned) next);
+          if (!require_budget(&ch)) goto publish;
           if (this->write_register(CAT_PACKED, ch_page, PACKED_CONFIGURATION, next)) {
             // Schedule another quick check
             this->urgent_channels_.push_back(ch);
@@ -169,20 +183,24 @@ void WavinAHC9000::update() {
         }
       }
     }
+    if (!require_budget(&ch)) goto publish;
     if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
       st.setpoint_c = this->raw_to_c(regs[0]);
     }
     // Read floor min/max (read-only) during urgent refresh in one combined request (reduces bus load)
+    if (!require_budget(&ch)) goto publish;
     if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MIN_TEMPERATURE, 2, regs) && regs.size() >= 2) {
       st.floor_min_c = this->raw_to_c(regs[0]);
       st.floor_max_c = this->raw_to_c(regs[1]);
     }
+    if (!require_budget(&ch)) goto publish;
     if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
       bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
       st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
     }
     if (!st.all_tp_lost && st.primary_index > 0) {
       uint8_t elem_page = (uint8_t) (st.primary_index - 1);
+      if (!require_budget(&ch)) goto publish;
       if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
         st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
         if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
@@ -219,6 +237,7 @@ void WavinAHC9000::update() {
     for (int s = 0; s < 2; s++) {
       switch (step) {
         case 0: {
+          if (!require_budget(nullptr)) goto publish;
           if (this->read_registers(CAT_CHANNELS, ch_page, CH_PRIMARY_ELEMENT, 1, regs) && regs.size() >= 1) {
             uint16_t v = regs[0];
             st.primary_index = v & CH_PRIMARY_ELEMENT_ELEMENT_MASK;
@@ -231,6 +250,7 @@ void WavinAHC9000::update() {
           break;
         }
         case 1: {
+          if (!require_budget(nullptr)) goto publish;
           if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
             uint16_t raw_cfg = regs[0];
             uint16_t mode_bits = raw_cfg & PACKED_CONFIGURATION_MODE_MASK;
@@ -245,6 +265,7 @@ void WavinAHC9000::update() {
           break;
         }
         case 2: {
+          if (!require_budget(nullptr)) goto publish;
           if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
             st.setpoint_c = this->raw_to_c(regs[0]);
             ESP_LOGD(TAG, "CH%u setpoint=%.1fC", ch_num, st.setpoint_c);
@@ -255,11 +276,13 @@ void WavinAHC9000::update() {
           break;
         }
         case 3: {
+          if (!require_budget(nullptr)) goto publish;
           // Read floor min+max together (contiguous) to reduce transactions
           if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MIN_TEMPERATURE, 2, regs) && regs.size() >= 2) {
             st.floor_min_c = this->raw_to_c(regs[0]);
             st.floor_max_c = this->raw_to_c(regs[1]);
           }
+          if (!require_budget(nullptr)) goto publish;
           if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
             bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
             st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
@@ -273,6 +296,7 @@ void WavinAHC9000::update() {
         case 4: {
           if (!st.all_tp_lost && st.primary_index > 0) {
             uint8_t elem_page = (uint8_t) (st.primary_index - 1);
+            if (!require_budget(nullptr)) goto publish;
             if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
               st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
               if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
@@ -323,6 +347,7 @@ void WavinAHC9000::update() {
   }
 
   // publish once per cycle
+publish:
   this->publish_updates();
 }
 
@@ -333,6 +358,10 @@ void WavinAHC9000::dump_config() {
                 (unsigned) this->post_tx_guard_us_);
   ESP_LOGCONFIG(TAG, "  Receive timeout: %ums", (unsigned) this->receive_timeout_ms_);
   ESP_LOGCONFIG(TAG, "  Flush RX before TX: %s", this->flush_rx_before_tx_ ? "yes" : "no");
+  if (this->transactions_per_cycle_ == 0)
+    ESP_LOGCONFIG(TAG, "  Transactions per cycle: unlimited");
+  else
+    ESP_LOGCONFIG(TAG, "  Transactions per cycle: %u", (unsigned) this->transactions_per_cycle_);
   if (this->flow_control_pin_ != nullptr) ESP_LOGCONFIG(TAG, "  Flow control pin configured");
   if (this->tx_enable_pin_ != nullptr) ESP_LOGCONFIG(TAG, "  TX enable pin configured");
 }
