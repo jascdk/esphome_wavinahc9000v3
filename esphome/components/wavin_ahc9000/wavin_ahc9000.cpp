@@ -96,7 +96,6 @@ void WavinAHC9000::setup() {
       this->pre_tx_delay_us_ = std::max<uint32_t>(frame_us / 2, 120);
       this->post_tx_guard_us_ = std::max<uint32_t>(computed_guard, 2500);
       this->flush_rx_before_tx_ = true;
-      if (this->receive_timeout_ms_ < 1500) this->receive_timeout_ms_ = 1500;
       profile = "esp32_c3";
       break;
     }
