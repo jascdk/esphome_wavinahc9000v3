@@ -27,10 +27,12 @@ class WavinRepairButton;
 enum class ModuleProfile : uint8_t {
   MODULE_DEFAULT = 0,
   MODULE_USTEPPER = 1,
+  MODULE_ESP32C3 = 2,
 };
 
 static constexpr ModuleProfile MODULE_DEFAULT = ModuleProfile::MODULE_DEFAULT;
 static constexpr ModuleProfile MODULE_USTEPPER = ModuleProfile::MODULE_USTEPPER;
+static constexpr ModuleProfile MODULE_ESP32C3 = ModuleProfile::MODULE_ESP32C3;
 
 class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
  public:

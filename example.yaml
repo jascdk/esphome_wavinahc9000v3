@@ -33,6 +33,7 @@ wavin_ahc9000:
   # Regular polling interval; optionally lower temporarily for quicker discovery
   update_interval: 5s
   # Optional: speed up initial discovery (uncomment briefly)
+  # module: esp32_c3  # force the ESP32-C3 timing profile (auto-selected on ESP32-C3 builds)
   # poll_channels_per_cycle: 8
   # update_interval: 2s
   allow_mode_writes: false

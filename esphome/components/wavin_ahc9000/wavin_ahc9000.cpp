@@ -45,6 +45,14 @@ void WavinAHC9000::setup() {
   const uint32_t bits_per_frame = 11;
   const uint32_t frame_us = (bits_per_frame * 1000000UL + baud - 1) / baud;  // ceil division
 
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+  if (this->module_profile_ == ModuleProfile::MODULE_DEFAULT) {
+    ESP_LOGI(TAG, "Auto-selecting ESP32-C3 timing profile");
+    this->module_profile_ = ModuleProfile::MODULE_ESP32C3;
+  }
+#endif
+
+  const char *profile = "default";
   switch (this->module_profile_) {
     case ModuleProfile::MODULE_USTEPPER: {
       // uStepper RS485 hat needs extra guard time; approximate 12-byte frame plus slack.
@@ -53,17 +61,27 @@ void WavinAHC9000::setup() {
       this->pre_tx_delay_us_ = std::max<uint32_t>(frame_us / 2, 100);
       this->post_tx_guard_us_ = std::max<uint32_t>(computed_guard, 2500);
       this->flush_rx_before_tx_ = true;
+      profile = "ustepper";
+      break;
+    }
+    case ModuleProfile::MODULE_ESP32C3: {
+      const uint32_t worst_case_bytes = 12;
+      const uint32_t computed_guard = frame_us * worst_case_bytes + frame_us * 2;
+      this->pre_tx_delay_us_ = std::max<uint32_t>(frame_us / 2, 120);
+      this->post_tx_guard_us_ = std::max<uint32_t>(computed_guard, 2500);
+      this->flush_rx_before_tx_ = true;
+      profile = "esp32_c3";
       break;
     }
     case ModuleProfile::MODULE_DEFAULT:
     default:
       this->pre_tx_delay_us_ = 0;
       this->post_tx_guard_us_ = std::max<uint32_t>(250, frame_us * 2);
-      this->flush_rx_before_tx_ = false;
+      this->flush_rx_before_tx_ = true;
+      profile = "default";
       break;
   }
 
-  const char *profile = (this->module_profile_ == ModuleProfile::MODULE_USTEPPER) ? "ustepper" : "default";
   ESP_LOGCONFIG(TAG, "Wavin AHC9000 hub setup (baud=%u module=%s guard=%uus pre=%uus)",
                 (unsigned) baud, profile, (unsigned) this->post_tx_guard_us_, (unsigned) this->pre_tx_delay_us_);
 }

@@ -25,6 +25,7 @@ CONF_MODULE = "module"
 MODULE_OPTIONS = {
     "default": ModuleProfile.MODULE_DEFAULT,
     "ustepper": ModuleProfile.MODULE_USTEPPER,
+    "esp32_c3": ModuleProfile.MODULE_ESP32C3,
 }
 
 _FRIENDLY_NAME_KEYS = {
