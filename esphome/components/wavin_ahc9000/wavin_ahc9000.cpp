@@ -990,9 +990,9 @@ void WavinAHC9000::prepare_for_tx_() {
 }
 
 void WavinAHC9000::finish_tx_() {
-  delayMicroseconds(this->post_tx_guard_us_);
   if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
   if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false);
+  if (this->post_tx_guard_us_ > 0) delayMicroseconds(this->post_tx_guard_us_);
 }
 
 float WavinAHC9000::get_channel_current_temp(uint8_t channel) const {
