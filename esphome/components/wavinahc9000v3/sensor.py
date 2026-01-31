@@ -20,7 +20,7 @@ CONF_TYPE = "type"
 
 CONFIG_SCHEMA = sensor.sensor_schema().extend(
     {
-        cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000),
+        cv.GenerateID("wavinahc9000v3_id"): cv.use_id(WavinAHC9000),
         cv.Required(CONF_CHANNEL): cv.int_range(min=1, max=16),
     cv.Required(CONF_TYPE): cv.one_of("battery", "temperature", "comfort_setpoint", "floor_temperature", "floor_min_temperature", "floor_max_temperature", "rssi_element", "rssi_cu", lower=True),
     }

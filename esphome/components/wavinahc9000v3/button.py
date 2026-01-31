@@ -18,7 +18,7 @@ CONF_NORMALIZE_OFF = "normalize_off"
 
 CONFIG_SCHEMA = button.button_schema(WavinRepairButton).extend(
     {
-        cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000),
+        cv.GenerateID("wavinahc9000v3_id"): cv.use_id(WavinAHC9000),
         cv.Required(CONF_CHANNEL): cv.int_range(min=1, max=16),
     cv.Optional(CONF_EXTENDED, default=False): cv.boolean,
     cv.Optional(CONF_AGGRESSIVE, default=False): cv.boolean,

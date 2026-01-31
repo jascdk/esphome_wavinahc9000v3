@@ -9,7 +9,7 @@ CONF_TYPE = "type"
 
 CONFIG_SCHEMA = binary_sensor.binary_sensor_schema().extend(
     {
-        cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000),
+        cv.GenerateID("wavinahc9000v3_id"): cv.use_id(WavinAHC9000),
         cv.Required(CONF_TYPE): cv.one_of("yaml_ready", lower=True),
     }
 )

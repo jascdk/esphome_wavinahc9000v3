@@ -7,7 +7,7 @@ from . import WavinAHC9000
 CONF_PARENT_ID = "wavinahc9000v3_id"
 
 CONFIG_SCHEMA = text_sensor.text_sensor_schema().extend(
-    {cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000)}
+    {cv.GenerateID("wavinahc9000v3_id"): cv.use_id(WavinAHC9000)}
 )
 
 

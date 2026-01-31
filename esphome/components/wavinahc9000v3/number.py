@@ -13,7 +13,7 @@ SETPOINT_TYPES = ["comfort", "standby"]
 
 CONFIG_SCHEMA = number.number_schema(WavinSetpointNumber).extend(
     {
-        cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000),
+        cv.GenerateID("wavinahc9000v3_id"): cv.use_id(WavinAHC9000),
         cv.Required(CONF_CHANNEL): cv.int_range(min=1, max=16),
         cv.Required(CONF_TYPE): cv.one_of(*SETPOINT_TYPES, lower=True),
     }

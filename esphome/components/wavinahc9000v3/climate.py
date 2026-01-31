@@ -16,7 +16,7 @@ CONF_USE_FLOOR_TEMPERATURE = "use_floor_temperature"
 
 CONFIG_SCHEMA = climate.climate_schema(WavinZoneClimate).extend(
     {
-        cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000),
+        cv.GenerateID("wavinahc9000v3_id"): cv.use_id(WavinAHC9000),
         cv.Optional(CONF_CHANNEL): cv.int_range(min=1, max=16),
         cv.Optional(CONF_MEMBERS): cv.ensure_list(cv.int_range(min=1, max=16)),
         cv.Optional(CONF_STRICT_MODE_WRITES, default=False): cv.boolean,
