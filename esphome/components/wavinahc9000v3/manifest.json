@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "documentation": "https://github.com/dkjonas/esphome_wavinahc9000v3",
+  "dependencies": [],
+  "codeowners": ["@you"]
+}

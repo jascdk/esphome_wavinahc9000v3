@@ -5,10 +5,10 @@ from esphome.const import CONF_ID
 
 from . import WavinAHC9000
 
-CONF_PARENT_ID = "wavin_ahc9000_id"
+CONF_PARENT_ID = "wavinahc9000v3_id"
 CONF_CHANNEL = "channel"
 
-WavinRepairButton = cg.esphome_ns.namespace("wavin_ahc9000").class_("WavinRepairButton", button.Button, cg.Component)
+WavinRepairButton = cg.esphome_ns.namespace("wavinahc9000v3").class_("WavinRepairButton", button.Button, cg.Component)
 
 # Optional extended repair clears additional flags that may lock keypad
 CONF_EXTENDED = "extended"

@@ -8,7 +8,7 @@ CODEOWNERS = ["@you"]
 # Ensure dependent component code is compiled so their headers are available.
 AUTO_LOAD = ["climate", "uart", "sensor", "text_sensor", "binary_sensor", "switch"]
 
-ns = cg.esphome_ns.namespace("wavin_ahc9000")
+ns = cg.esphome_ns.namespace("wavinahc9000v3")
 WavinAHC9000 = ns.class_("WavinAHC9000", cg.PollingComponent, uart.UARTDevice)
 WavinZoneClimate = ns.class_("WavinZoneClimate", climate.Climate, cg.Component)
 
