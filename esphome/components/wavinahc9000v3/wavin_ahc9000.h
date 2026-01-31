@@ -28,19 +28,21 @@ class WavinChildLockSwitch;
 
 class WavinSetpointNumber : public number::Number {
  public:
-  enum Type { COMFORT = 0, STANDBY = 1, HYSTERESIS = 2 };
+  static constexpr uint8_t COMFORT = 0;
+  static constexpr uint8_t STANDBY = 1;
+  static constexpr uint8_t HYSTERESIS = 2;
   void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
   void set_channel(uint8_t ch) { this->channel_ = ch; }
-  void set_type(Type t) { this->type_ = t; }
+  void set_type(uint8_t t) { this->type_ = t; }
   uint8_t get_channel() const { return this->channel_; }
-  Type get_type() const { return this->type_; }
+  uint8_t get_type() const { return this->type_; }
  protected:
   // Declared here, defined after WavinAHC9000 (needs full class definition to call methods)
   void control(float value) override;
  private:
   WavinAHC9000 *parent_{nullptr};
   uint8_t channel_{0};
-  Type type_{COMFORT};
+  uint8_t type_{COMFORT};
 };
 
 class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
