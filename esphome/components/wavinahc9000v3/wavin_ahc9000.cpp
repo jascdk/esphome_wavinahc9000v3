@@ -54,6 +54,12 @@ void WavinAHC9000::update() {
     return;
   }
 
+  // One-time query for device info (software version, etc.)
+  if (!this->device_info_read_) {
+    this->query_device_info();
+    this->device_info_read_ = true;
+  }
+
   // Process any urgent channels first (scheduled due to a write)
   std::vector<uint16_t> regs;
   uint8_t urgent_processed = 0;
@@ -520,6 +526,35 @@ bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t
   next_wm_attempt:;
   }
   return false;
+}
+
+void WavinAHC9000::query_device_info() {
+  if (this->software_version_sensor_ == nullptr && this->hardware_version_sensor_ == nullptr && this->device_name_sensor_ == nullptr) return;
+
+  std::vector<uint16_t> regs;
+  // Read 3 registers: HW (0x02), SW (0x03), Name (0x04)
+  if (this->read_registers(CAT_INFO, 0, INFO_HW_VERSION, 3, regs) && regs.size() >= 3) {
+    if (this->hardware_version_sensor_ != nullptr) {
+      uint16_t raw = regs[0];
+      uint8_t suffix = raw & 0x7F;
+      this->hardware_version_sensor_->publish_state("MC110" + std::to_string(suffix));
+    }
+    if (this->software_version_sensor_ != nullptr) {
+      uint16_t raw = regs[1];
+      uint8_t bcd_suffix = (raw >> 4) & 0xFF; // Bits 11-4
+      uint8_t beta = raw & 0x0F;              // Bits 3-0
+      uint8_t suffix_dec = ((bcd_suffix >> 4) & 0x0F) * 10 + (bcd_suffix & 0x0F);
+      std::string sw = "MC610" + std::to_string(suffix_dec);
+      if (beta != 0) {
+        sw += "b" + std::to_string(beta);
+      }
+      this->software_version_sensor_->publish_state(sw);
+    }
+    if (this->device_name_sensor_ != nullptr) {
+      uint16_t raw = regs[2];
+      this->device_name_sensor_->publish_state("AC-" + std::to_string(raw));
+    }
+  }
 }
 
 // High-level write helpers

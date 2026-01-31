@@ -99,6 +99,9 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void generate_yaml_suggestion();
   void set_yaml_ready_binary_sensor(binary_sensor::BinarySensor *s) { this->yaml_ready_binary_sensor_ = s; }
   void set_yaml_text_sensor(text_sensor::TextSensor *s) { this->yaml_text_sensor_ = s; }
+  void set_software_version_sensor(text_sensor::TextSensor *s) { this->software_version_sensor_ = s; }
+  void set_hardware_version_sensor(text_sensor::TextSensor *s) { this->hardware_version_sensor_ = s; }
+  void set_device_name_sensor(text_sensor::TextSensor *s) { this->device_name_sensor_ = s; }
   // Debug helper to dump registers for a channel (to identify floor min/max addresses)
   void dump_channel_floor_limits(uint8_t channel);
   // Accessor for last generated YAML (for HA notifications via lambda)
@@ -146,6 +149,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   bool write_register(uint8_t category, uint8_t page, uint8_t index, uint16_t value);
   // Masked write: apply (reg & and_mask) | or_mask semantics
   bool write_masked_register(uint8_t category, uint8_t page, uint8_t index, uint16_t and_mask, uint16_t or_mask);
+  void query_device_info();
 
   void publish_updates();
 
@@ -191,6 +195,9 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::map<uint8_t, switch_::Switch *> child_lock_switches_;
   binary_sensor::BinarySensor *yaml_ready_binary_sensor_{nullptr};
   text_sensor::TextSensor *yaml_text_sensor_{nullptr};
+  text_sensor::TextSensor *software_version_sensor_{nullptr};
+  text_sensor::TextSensor *hardware_version_sensor_{nullptr};
+  text_sensor::TextSensor *device_name_sensor_{nullptr};
   std::string yaml_last_suggestion_{};
   std::string yaml_last_climate_{};
   std::string yaml_last_battery_{};
@@ -219,6 +226,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   uint8_t channel_step_[16] = {0};
   std::vector<uint8_t> urgent_channels_{}; // channels scheduled for immediate refresh on next update
   bool allow_mode_writes_{true};
+  bool device_info_read_{false};
 
   // YAML readiness tracking: which channels are present and which had an element block read at least once
   uint16_t yaml_primary_present_mask_{0};  // bit i set when channel (i+1) has a primary element and no tp lost
@@ -234,6 +242,11 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   static constexpr uint8_t CAT_CHANNELS = 0x03;
   static constexpr uint8_t CAT_ELEMENTS = 0x01;
   static constexpr uint8_t CAT_PACKED = 0x02;
+  static constexpr uint8_t CAT_INFO = 0x07;
+
+  static constexpr uint8_t INFO_HW_VERSION = 0x02;
+  static constexpr uint8_t INFO_SW_VERSION = 0x03;
+  static constexpr uint8_t INFO_DEVICE_NAME = 0x04;
 
   static constexpr uint8_t CH_TIMER_EVENT = 0x00; // status incl. output bit
   static constexpr uint16_t CH_TIMER_EVENT_OUTP_ON_MASK = 0x0010;
