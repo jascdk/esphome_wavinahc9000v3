@@ -1292,14 +1292,22 @@ void WavinZoneClimate::dump_config() { LOG_CLIMATE("  ", "Wavin Zone Climate (mi
 climate::ClimateTraits WavinZoneClimate::traits() {
   climate::ClimateTraits t;
   t.set_supported_modes({climate::CLIMATE_MODE_HEAT, climate::CLIMATE_MODE_OFF});
+  // Use pragmas to avoid deprecated-declarations warnings on older/newer ESPHome APIs
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   t.set_supports_current_temperature(true);
   t.set_supports_action(true);
+#pragma GCC diagnostic pop
   // Default visual bounds
   float vmin = 5.0f;
   float vmax = 35.0f;
   // For comfort climates (using floor temperature), adopt current floor min/max when available
   if (this->single_channel_set_ && this->use_floor_temperature_) {
+    // two-point target temperature support may be guarded by newer APIs; suppress deprecation warning
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     t.set_supports_two_point_target_temperature(true);
+  #pragma GCC diagnostic pop
     float fmin = this->parent_->get_channel_floor_min_temp(this->single_channel_);
     float fmax = this->parent_->get_channel_floor_max_temp(this->single_channel_);
     if (!std::isnan(fmin)) vmin = fmin;
