@@ -7,6 +7,7 @@ from esphome.const import (
     ICON_BATTERY,
     DEVICE_CLASS_TEMPERATURE,
     UNIT_CELSIUS,
+    UNIT_DECIBEL,
 )
 
 from . import WavinAHC9000
@@ -21,7 +22,7 @@ CONFIG_SCHEMA = sensor.sensor_schema().extend(
     {
         cv.GenerateID(CONF_PARENT_ID): cv.use_id(WavinAHC9000),
         cv.Required(CONF_CHANNEL): cv.int_range(min=1, max=16),
-    cv.Required(CONF_TYPE): cv.one_of("battery", "temperature", "comfort_setpoint", "floor_temperature", "floor_min_temperature", "floor_max_temperature", lower=True),
+    cv.Required(CONF_TYPE): cv.one_of("battery", "temperature", "comfort_setpoint", "floor_temperature", "floor_min_temperature", "floor_max_temperature", "rssi_element", "rssi_cu", lower=True),
     }
 )
 
@@ -36,6 +37,14 @@ async def to_code(config):
         cg.add(sens.set_icon(ICON_BATTERY))
         cg.add(sens.set_accuracy_decimals(0))
         cg.add(hub.add_channel_battery_sensor(config[CONF_CHANNEL], sens))
+    elif config[CONF_TYPE] == "rssi_element":
+        cg.add(sens.set_unit_of_measurement(UNIT_DECIBEL))
+        cg.add(sens.set_accuracy_decimals(1))
+        cg.add(hub.add_channel_rssi_element_sensor(config[CONF_CHANNEL], sens))
+    elif config[CONF_TYPE] == "rssi_cu":
+        cg.add(sens.set_unit_of_measurement(UNIT_DECIBEL))
+        cg.add(sens.set_accuracy_decimals(1))
+        cg.add(hub.add_channel_rssi_cu_sensor(config[CONF_CHANNEL], sens))
     # yaml_ready numeric sensor removed in favor of binary_sensor platform
     else:
         # temperature & comfort_setpoint share temperature meta

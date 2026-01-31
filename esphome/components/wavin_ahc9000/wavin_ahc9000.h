@@ -52,6 +52,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   // New read-only floor limit sensors
   void add_channel_floor_min_temperature_sensor(uint8_t ch, sensor::Sensor *s);
   void add_channel_floor_max_temperature_sensor(uint8_t ch, sensor::Sensor *s);
+  void add_channel_rssi_element_sensor(uint8_t ch, sensor::Sensor *s);
+  void add_channel_rssi_cu_sensor(uint8_t ch, sensor::Sensor *s);
   void add_channel_child_lock_switch(uint8_t ch, switch_::Switch *s) { this->child_lock_switches_[ch] = s; }
   void add_active_channel(uint8_t ch);
 
@@ -92,6 +94,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::string get_yaml_floor_temperature_chunk(uint8_t start, uint8_t count) const;
   std::string get_yaml_floor_min_temperature_chunk(uint8_t start, uint8_t count) const;
   std::string get_yaml_floor_max_temperature_chunk(uint8_t start, uint8_t count) const;
+  std::string get_yaml_rssi_element_chunk(uint8_t start, uint8_t count) const;
+  std::string get_yaml_rssi_cu_chunk(uint8_t start, uint8_t count) const;
   // New: child lock switch YAML chunk (returns switch entities)
   std::string get_yaml_child_lock_chunk(uint8_t start, uint8_t count) const;
   uint8_t get_yaml_active_count() const { return (uint8_t) this->yaml_active_channels_.size(); }
@@ -135,6 +139,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
     climate::ClimateMode mode{climate::CLIMATE_MODE_HEAT};
     climate::ClimateAction action{climate::CLIMATE_ACTION_OFF};
     uint8_t battery_pct{255}; // 0..100; 255=unknown
+    float rssi_element_dbm{NAN}; // RSSI at element/thermostat side (dBm)
+    float rssi_cu_dbm{NAN}; // RSSI at control unit side (dBm)
     uint16_t primary_index{0};
     bool all_tp_lost{false};
     bool has_floor_sensor{false};
@@ -150,6 +156,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   // New read-only floor limit sensor maps
   std::map<uint8_t, sensor::Sensor *> floor_min_temperature_sensors_;
   std::map<uint8_t, sensor::Sensor *> floor_max_temperature_sensors_;
+  std::map<uint8_t, sensor::Sensor *> rssi_element_sensors_;
+  std::map<uint8_t, sensor::Sensor *> rssi_cu_sensors_;
   std::map<uint8_t, sensor::Sensor *> comfort_setpoint_sensors_;
   std::map<uint8_t, switch_::Switch *> child_lock_switches_;
   binary_sensor::BinarySensor *yaml_ready_binary_sensor_{nullptr};
@@ -207,6 +215,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   static constexpr uint8_t ELEM_AIR_TEMPERATURE = 0x04; // index within block
   static constexpr uint8_t ELEM_FLOOR_TEMPERATURE = 0x05; // index for floor probe
   static constexpr uint8_t ELEM_BATTERY_STATUS = 0x0A;  // not used yet
+  static constexpr uint8_t ELEM_RSSI = 0x09; // RSSI register (16-bit: high byte=element, low byte=CU)
 
   static constexpr uint8_t PACKED_MANUAL_TEMPERATURE = 0x00;
   static constexpr uint8_t PACKED_STANDBY_TEMPERATURE = 0x04;
@@ -271,6 +280,14 @@ inline void WavinAHC9000::add_channel_floor_min_temperature_sensor(uint8_t ch, s
 
 inline void WavinAHC9000::add_channel_floor_max_temperature_sensor(uint8_t ch, sensor::Sensor *s) {
   this->floor_max_temperature_sensors_[ch] = s;
+}
+
+inline void WavinAHC9000::add_channel_rssi_element_sensor(uint8_t ch, sensor::Sensor *s) {
+  this->rssi_element_sensors_[ch] = s;
+}
+
+inline void WavinAHC9000::add_channel_rssi_cu_sensor(uint8_t ch, sensor::Sensor *s) {
+  this->rssi_cu_sensors_[ch] = s;
 }
 
 // numeric yaml_ready sensor removed

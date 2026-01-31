@@ -10,6 +10,13 @@ namespace wavin_ahc9000 {
 
 static const char *const TAG = "wavin_ahc9000";
 
+// Helper function to convert raw RSSI byte value to dBm
+// raw value 0x00 = -74 dBm, each step is +0.5 dBm
+// Treats raw as signed 8-bit integer
+static float raw_rssi_to_dbm(uint8_t raw) {
+  int8_t signed_raw = (int8_t) raw;
+  return -74.0f + (signed_raw * 0.5f);
+}
 
 // Simple Modbus CRC16 (0xA001 poly)
 static uint16_t crc16(const uint8_t *frame, size_t len) {
@@ -110,6 +117,15 @@ void WavinAHC9000::update() {
           } else {
             st.floor_temp_c = NAN;
           }
+        }
+        // Read RSSI data from element
+        if (this->read_registers(CAT_ELEMENTS, elem_page, ELEM_RSSI, 1, regs) && regs.size() >= 1) {
+          uint16_t rssi_reg = regs[0];
+          uint8_t rssiel_raw = (rssi_reg >> 8) & 0xFF;   // high byte: element side
+          uint8_t rssicu_raw = rssi_reg & 0xFF;          // low byte: control unit side
+          st.rssi_element_dbm = raw_rssi_to_dbm(rssiel_raw);
+          st.rssi_cu_dbm = raw_rssi_to_dbm(rssicu_raw);
+          ESP_LOGD(TAG, "CH%u RSSI element=%.1f dBm cu=%.1f dBm", (unsigned) ch, st.rssi_element_dbm, st.rssi_cu_dbm);
         }
       }
     }
@@ -222,6 +238,24 @@ void WavinAHC9000::update() {
                 auto it = this->battery_sensors_.find(ch_num);
                 if (it != this->battery_sensors_.end() && it->second != nullptr) {
                   it->second->publish_state((float) pct);
+                }
+              }
+              // Read RSSI data from element
+              if (this->read_registers(CAT_ELEMENTS, elem_page, ELEM_RSSI, 1, regs) && regs.size() >= 1) {
+                uint16_t rssi_reg = regs[0];
+                uint8_t rssiel_raw = (rssi_reg >> 8) & 0xFF;   // high byte: element side
+                uint8_t rssicu_raw = rssi_reg & 0xFF;          // low byte: control unit side
+                st.rssi_element_dbm = raw_rssi_to_dbm(rssiel_raw);
+                st.rssi_cu_dbm = raw_rssi_to_dbm(rssicu_raw);
+                ESP_LOGD(TAG, "CH%u RSSI element=%.1f dBm cu=%.1f dBm", ch_num, st.rssi_element_dbm, st.rssi_cu_dbm);
+                // Publish RSSI sensors if configured
+                auto it_rssi_el = this->rssi_element_sensors_.find(ch_num);
+                if (it_rssi_el != this->rssi_element_sensors_.end() && it_rssi_el->second != nullptr) {
+                  it_rssi_el->second->publish_state(st.rssi_element_dbm);
+                }
+                auto it_rssi_cu = this->rssi_cu_sensors_.find(ch_num);
+                if (it_rssi_cu != this->rssi_cu_sensors_.end() && it_rssi_cu->second != nullptr) {
+                  it_rssi_cu->second->publish_state(st.rssi_cu_dbm);
                 }
               }
             } else {
@@ -954,6 +988,36 @@ static std::string build_floor_max_temperature_yaml_for(const WavinAHC9000 *pare
   return y;
 }
 
+static std::string build_rssi_element_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
+  std::string y;
+  if (chs.empty()) return y;
+  for (auto ch : chs) {
+    std::string fname = parent->get_channel_friendly_name(ch);
+    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
+    y += "- platform: wavin_ahc9000\n";
+    y += "  wavin_ahc9000_id: wavin\n";
+    y += "  name: \"" + fname + " RSSI Element\"\n";
+    y += "  channel: " + std::to_string((int) ch) + "\n";
+    y += "  type: rssi_element\n";
+  }
+  return y;
+}
+
+static std::string build_rssi_cu_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
+  std::string y;
+  if (chs.empty()) return y;
+  for (auto ch : chs) {
+    std::string fname = parent->get_channel_friendly_name(ch);
+    if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
+    y += "- platform: wavin_ahc9000\n";
+    y += "  wavin_ahc9000_id: wavin\n";
+    y += "  name: \"" + fname + " RSSI Control Unit\"\n";
+    y += "  channel: " + std::to_string((int) ch) + "\n";
+    y += "  type: rssi_cu\n";
+  }
+  return y;
+}
+
 static std::string build_child_lock_yaml_for(const WavinAHC9000 *parent, const std::vector<uint8_t> &chs) {
   std::string y;
   if (chs.empty()) return y;
@@ -1065,6 +1129,18 @@ std::string WavinAHC9000::get_yaml_floor_max_temperature_chunk(uint8_t start, ui
   std::vector<uint8_t> chs(this->yaml_floor_channels_.begin() + start, this->yaml_floor_channels_.begin() + end);
   return build_floor_max_temperature_yaml_for(this, chs);
 }
+std::string WavinAHC9000::get_yaml_rssi_element_chunk(uint8_t start, uint8_t count) const {
+  if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
+  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
+  std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
+  return build_rssi_element_yaml_for(this, chs);
+}
+std::string WavinAHC9000::get_yaml_rssi_cu_chunk(uint8_t start, uint8_t count) const {
+  if (start >= this->yaml_active_channels_.size() || count == 0) return std::string("");
+  uint8_t end = (uint8_t) std::min<size_t>(this->yaml_active_channels_.size(), (size_t) start + count);
+  std::vector<uint8_t> chs(this->yaml_active_channels_.begin() + start, this->yaml_active_channels_.begin() + end);
+  return build_rssi_cu_yaml_for(this, chs);
+}
 
 std::string WavinAHC9000::get_yaml_group_climate_chunk(uint8_t start, uint8_t count) const {
   if (start >= this->yaml_group_climate_groups_.size() || count == 0) return std::string("");
@@ -1136,6 +1212,28 @@ void WavinAHC9000::publish_updates() {
     auto it = this->channels_.find(ch);
     if (it != this->channels_.end()) {
       float v = it->second.floor_max_c;
+      if (!std::isnan(v)) s->publish_state(v);
+    }
+  }
+
+  // Publish RSSI sensors
+  for (auto &kv : this->rssi_element_sensors_) {
+    uint8_t ch = kv.first;
+    auto *s = kv.second;
+    if (!s) continue;
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end()) {
+      float v = it->second.rssi_element_dbm;
+      if (!std::isnan(v)) s->publish_state(v);
+    }
+  }
+  for (auto &kv : this->rssi_cu_sensors_) {
+    uint8_t ch = kv.first;
+    auto *s = kv.second;
+    if (!s) continue;
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end()) {
+      float v = it->second.rssi_cu_dbm;
       if (!std::isnan(v)) s->publish_state(v);
     }
   }
