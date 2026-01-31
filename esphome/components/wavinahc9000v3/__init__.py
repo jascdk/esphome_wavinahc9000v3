@@ -1,6 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import uart, climate
+from esphome.components import uart, climate, number
 from esphome.const import CONF_ID
 from esphome import pins
 
@@ -11,6 +11,7 @@ AUTO_LOAD = ["climate", "uart", "sensor", "text_sensor", "binary_sensor", "switc
 ns = cg.esphome_ns.namespace("wavinahc9000v3")
 WavinAHC9000 = ns.class_("WavinAHC9000", cg.PollingComponent, uart.UARTDevice)
 WavinZoneClimate = ns.class_("WavinZoneClimate", climate.Climate, cg.Component)
+WavinSetpointNumber = ns.class_("WavinSetpointNumber", number.Number)
 
 CONF_UART_ID = "uart_id"
 CONF_TX_ENABLE_PIN = "tx_enable_pin"

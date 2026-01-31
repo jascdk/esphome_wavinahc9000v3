@@ -452,3 +452,64 @@ binary_sensor:
 
 ## Disclaimer
 Community-driven integration; use at your own risk. Not affiliated with Wavin / Jablotron.
+
+## RSSI (Signal Strength)
+
+The component exposes two RSSI sensors per channel (when available): the element/thermostat side and the control-unit side. These values come from the element register `ELEM_RSSI` (16-bit): high byte = element RSSI, low byte = control-unit RSSI.
+
+- Conversion: raw signed byte -> dBm
+
+  signal_dBm = -74.0 + (signed_raw * 0.5)
+
+  The register stores each RSSI as an 8-bit signed value. The code converts this and publishes with one decimal place.
+
+- Quick interpretation guide
+
+  - > -60 dBm : Excellent
+  - -70 to -60 dBm : Good
+  - -80 to -70 dBm : Fair
+  - -90 to -80 dBm : Poor
+  - < -90 dBm : Very poor — consider repositioning the thermostat or control unit
+
+Example YAML (RSSI sensors):
+
+```yaml
+sensor:
+  - platform: wavin_ahc9000
+    wavinahc9000v3_id: wavin
+    name: "Bedroom RSSI Element"
+    channel: 1
+    type: rssi_element
+
+  - platform: wavin_ahc9000
+    wavinahc9000v3_id: wavin
+    name: "Bedroom RSSI Control Unit"
+    channel: 1
+    type: rssi_cu
+```
+
+## Hysteresis (adjustable)
+
+Hysteresis is exposed as a writable `number` entity. It maps to the packed register index `0x0E` (PACKED_HYSTERESIS) and uses 0.1°C resolution.
+
+- Register mapping: RAW = hysteresis * 10 (integer)
+- UI range (recommended / enforced by component): 0.1 — 1.0 °C (step 0.1)
+- Writes are clamped to the safe range (raw 1..10) before being written to the controller.
+
+Example YAML (hysteresis as a Number entity):
+
+```yaml
+number:
+  - platform: wavin_ahc9000
+    wavinahc9000v3_id: wavin
+    name: "Bedroom Hysteresis"
+    channel: 1
+    type: hysteresis
+    min_value: 0.1
+    max_value: 1.0
+    step: 0.1
+```
+
+Notes:
+- Changing the hysteresis adjusts how aggressively the zone controller toggles heating around the setpoint. Smaller values reduce temperature swing but may increase switching frequency.
+- Start with 0.2–0.4 °C for typical radiator systems; increase if you observe excessive cycling.

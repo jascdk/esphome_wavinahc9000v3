@@ -93,6 +93,10 @@ void WavinAHC9000::update() {
     }
     if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
       st.setpoint_c = this->raw_to_c(regs[0]);
+      // Read hysteresis (0.1°C units)
+      if (this->read_registers(CAT_PACKED, ch_page, PACKED_HYSTERESIS, 1, regs) && regs.size() >= 1) {
+        st.hysteresis_c = (float) regs[0] / 10.0f;
+      }
     }
     // Read floor min/max (read-only) during urgent refresh in one combined request (reduces bus load)
     if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MIN_TEMPERATURE, 2, regs) && regs.size() >= 2) {
@@ -181,6 +185,10 @@ void WavinAHC9000::update() {
           if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
             st.setpoint_c = this->raw_to_c(regs[0]);
             ESP_LOGD(TAG, "CH%u setpoint=%.1fC", ch_num, st.setpoint_c);
+            // Read hysteresis (0.1°C units)
+            if (this->read_registers(CAT_PACKED, ch_page, PACKED_HYSTERESIS, 1, regs) && regs.size() >= 1) {
+              st.hysteresis_c = (float) regs[0] / 10.0f;
+            }
           } else {
             ESP_LOGW(TAG, "CH%u: setpoint read failed", ch_num);
           }
@@ -617,6 +625,23 @@ void WavinAHC9000::write_channel_floor_max_temperature(uint8_t channel, float ce
     this->channels_[channel].floor_max_c = celsius;
     this->urgent_channels_.push_back(channel);
     this->suspend_polling_until_ = millis() + 100;
+  }
+}
+
+void WavinAHC9000::write_channel_hysteresis(uint8_t channel, float celsius) {
+  if (channel < 1 || channel > 16) return;
+  // clamp to safe UI bounds: 0.1 .. 1.0 °C
+  if (std::isnan(celsius)) return;
+  if (celsius < 0.1f) celsius = 0.1f;
+  if (celsius > 1.0f) celsius = 1.0f;
+  uint8_t page = (uint8_t) (channel - 1);
+  uint16_t raw = (uint16_t) (std::round(celsius * 10.0f));
+  if (this->write_register(CAT_PACKED, page, PACKED_HYSTERESIS, raw)) {
+    this->channels_[channel].hysteresis_c = celsius;
+    this->urgent_channels_.push_back(channel);
+    this->suspend_polling_until_ = millis() + 100;
+  } else {
+    ESP_LOGW(TAG, "Hysteresis write failed for ch=%u", (unsigned) channel);
   }
 }
 
@@ -1238,6 +1263,35 @@ void WavinAHC9000::publish_updates() {
     }
   }
 
+
+  // Publish configured number entities (setpoints and hysteresis)
+  for (auto &kv : this->comfort_numbers_) {
+    uint8_t ch = kv.first;
+    auto *n = kv.second;
+    if (!n) continue;
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end() && !std::isnan(it->second.setpoint_c)) {
+      n->publish_state(it->second.setpoint_c);
+    }
+  }
+  for (auto &kv : this->standby_numbers_) {
+    uint8_t ch = kv.first;
+    auto *n = kv.second;
+    if (!n) continue;
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end() && !std::isnan(it->second.setpoint_c)) {
+      n->publish_state(it->second.setpoint_c);
+    }
+  }
+  for (auto &kv : this->hysteresis_numbers_) {
+    uint8_t ch = kv.first;
+    auto *n = kv.second;
+    if (!n) continue;
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end() && !std::isnan(it->second.hysteresis_c)) {
+      n->publish_state(it->second.hysteresis_c);
+    }
+  }
   // Child lock switches
   for (auto &kv : this->child_lock_switches_) {
     uint8_t ch = kv.first;

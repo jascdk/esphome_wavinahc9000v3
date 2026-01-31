@@ -5,6 +5,7 @@
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/components/switch/switch.h"
+#include "esphome/components/number/number.h"
 #include "esphome/core/component.h"
 
 #include <vector>
@@ -23,6 +24,30 @@ namespace wavinahc9000v3 {
 // Forward
 class WavinZoneClimate;
 class WavinChildLockSwitch;
+
+class WavinSetpointNumber : public number::Number {
+ public:
+  enum Type { COMFORT = 0, STANDBY = 1, HYSTERESIS = 2 };
+  void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
+  void set_channel(uint8_t ch) { this->channel_ = ch; }
+  void set_type(Type t) { this->type_ = t; }
+  uint8_t get_channel() const { return this->channel_; }
+  Type get_type() const { return this->type_; }
+ protected:
+  void write_state(float value) override {
+    if (this->parent_ == nullptr) return;
+    if (this->type_ == HYSTERESIS) {
+      this->parent_->write_channel_hysteresis(this->channel_, value);
+    } else {
+      this->parent_->write_channel_setpoint(this->channel_, value);
+    }
+    this->publish_state(value);
+  }
+ private:
+  WavinAHC9000 *parent_{nullptr};
+  uint8_t channel_{0};
+  Type type_{COMFORT};
+};
 
 class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
  public:
@@ -54,6 +79,9 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void add_channel_floor_max_temperature_sensor(uint8_t ch, sensor::Sensor *s);
   void add_channel_rssi_element_sensor(uint8_t ch, sensor::Sensor *s);
   void add_channel_rssi_cu_sensor(uint8_t ch, sensor::Sensor *s);
+  void add_comfort_number(number::Number *n);
+  void add_standby_number(number::Number *n);
+  void add_hysteresis_number(number::Number *n);
   void add_channel_child_lock_switch(uint8_t ch, switch_::Switch *s) { this->child_lock_switches_[ch] = s; }
   void add_active_channel(uint8_t ch);
 
@@ -65,6 +93,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   // Write floor temperature limits (Celsius), clamped to sane bounds
   void write_channel_floor_min_temperature(uint8_t channel, float celsius);
   void write_channel_floor_max_temperature(uint8_t channel, float celsius);
+  void write_channel_hysteresis(uint8_t channel, float celsius);
   void refresh_channel_now(uint8_t channel);
   void set_strict_mode_write(uint8_t channel, bool enable);
   bool is_strict_mode_write(uint8_t channel) const;
@@ -141,6 +170,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
     uint8_t battery_pct{255}; // 0..100; 255=unknown
     float rssi_element_dbm{NAN}; // RSSI at element/thermostat side (dBm)
     float rssi_cu_dbm{NAN}; // RSSI at control unit side (dBm)
+    float hysteresis_c{NAN}; // hysteresis (°C)
     uint16_t primary_index{0};
     bool all_tp_lost{false};
     bool has_floor_sensor{false};
@@ -158,6 +188,9 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::map<uint8_t, sensor::Sensor *> floor_max_temperature_sensors_;
   std::map<uint8_t, sensor::Sensor *> rssi_element_sensors_;
   std::map<uint8_t, sensor::Sensor *> rssi_cu_sensors_;
+  std::map<uint8_t, number::Number *> comfort_numbers_;
+  std::map<uint8_t, number::Number *> standby_numbers_;
+  std::map<uint8_t, number::Number *> hysteresis_numbers_;
   std::map<uint8_t, sensor::Sensor *> comfort_setpoint_sensors_;
   std::map<uint8_t, switch_::Switch *> child_lock_switches_;
   binary_sensor::BinarySensor *yaml_ready_binary_sensor_{nullptr};
@@ -223,6 +256,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   // Inferred from field dump: floor min/max setpoints exposed in PACKED page
   static constexpr uint8_t PACKED_FLOOR_MIN_TEMPERATURE = 0x0A; // 21.5C example
   static constexpr uint8_t PACKED_FLOOR_MAX_TEMPERATURE = 0x0B; // 25.5C example
+  static constexpr uint8_t PACKED_HYSTERESIS = 0x0E; // hysteresis (0.1°C units)
   // Note: PACKED_FLOOR_MIN_TEMPERATURE and PACKED_FLOOR_MAX_TEMPERATURE are contiguous; reads
   // have been consolidated (count=2 starting at MIN) to reduce RS485 transactions.
   static constexpr uint16_t PACKED_CONFIGURATION_MODE_MASK = 0x07;
@@ -288,6 +322,30 @@ inline void WavinAHC9000::add_channel_rssi_element_sensor(uint8_t ch, sensor::Se
 
 inline void WavinAHC9000::add_channel_rssi_cu_sensor(uint8_t ch, sensor::Sensor *s) {
   this->rssi_cu_sensors_[ch] = s;
+}
+
+inline void WavinAHC9000::add_comfort_number(number::Number *n) {
+  auto ptr = dynamic_cast<WavinSetpointNumber *>(n);
+  if (ptr == nullptr) return;
+  uint8_t ch = ptr->get_channel();
+  if (ch < 1 || ch > 16) return;
+  this->comfort_numbers_[ch] = n;
+}
+
+inline void WavinAHC9000::add_standby_number(number::Number *n) {
+  auto ptr = dynamic_cast<WavinSetpointNumber *>(n);
+  if (ptr == nullptr) return;
+  uint8_t ch = ptr->get_channel();
+  if (ch < 1 || ch > 16) return;
+  this->standby_numbers_[ch] = n;
+}
+
+inline void WavinAHC9000::add_hysteresis_number(number::Number *n) {
+  auto ptr = dynamic_cast<WavinSetpointNumber *>(n);
+  if (ptr == nullptr) return;
+  uint8_t ch = ptr->get_channel();
+  if (ch < 1 || ch > 16) return;
+  this->hysteresis_numbers_[ch] = n;
 }
 
 // numeric yaml_ready sensor removed
