@@ -6,7 +6,7 @@
 #include <algorithm>
 
 namespace esphome {
-namespace wavin_ahc9000 {
+namespace wavinahc9000v3 {
 
 static const char *const TAG = "wavin_ahc9000";
 
@@ -775,8 +775,8 @@ void WavinAHC9000::generate_yaml_suggestion() {
       if (sorted.size() == 2) name = "Zone G " + std::to_string((int) sorted[0]) + "&" + std::to_string((int) sorted[1]);
       else name = "Zone G " + std::to_string((int) sorted.front()) + "-" + std::to_string((int) sorted.back());
     }
-    yaml_group_climate += "  - platform: wavin_ahc9000\n";
-    yaml_group_climate += "    wavin_ahc9000_id: wavin\n";
+    yaml_group_climate += "  - platform: wavinahc9000v3\n";
+    yaml_group_climate += "    wavinahc9000v3_id: wavin\n";
     yaml_group_climate += "    name: \"" + name + "\"\n";
     yaml_group_climate += "    members: [";
     for (size_t i = 0; i < sorted.size(); i++) {
@@ -794,8 +794,8 @@ void WavinAHC9000::generate_yaml_suggestion() {
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
     bool grouped = this->yaml_grouped_channels_.count(ch) != 0;
     std::string prefix = grouped ? "  #" : "  ";
-    yaml_climate += prefix + " - platform: wavin_ahc9000\n";
-    yaml_climate += prefix + "   wavin_ahc9000_id: wavin\n";
+    yaml_climate += prefix + " - platform: wavinahc9000v3\n";
+    yaml_climate += prefix + "   wavinahc9000v3_id: wavin\n";
     yaml_climate += prefix + "   name: \"" + fname + "\"\n";
     yaml_climate += prefix + "   channel: " + std::to_string((int) ch) + "\n";
     if (grouped) yaml_climate += prefix + "   # Commented out because channel participates in a group climate above.\n";
@@ -814,8 +814,8 @@ void WavinAHC9000::generate_yaml_suggestion() {
       }
       std::string fname = this->get_channel_friendly_name(ch);
       if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-      yaml_comfort_climate += "  - platform: wavin_ahc9000\n";
-      yaml_comfort_climate += "    wavin_ahc9000_id: wavin\n";
+      yaml_comfort_climate += "  - platform: wavinahc9000v3\n";
+      yaml_comfort_climate += "    wavinahc9000v3_id: wavin\n";
       yaml_comfort_climate += "    name: \"" + fname + " Comfort\"\n";
       yaml_comfort_climate += "    channel: " + std::to_string((int) ch) + "\n";
       yaml_comfort_climate += "    use_floor_temperature: true\n";
@@ -827,8 +827,8 @@ void WavinAHC9000::generate_yaml_suggestion() {
   for (auto ch : active) {
     std::string fname = this->get_channel_friendly_name(ch);
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    yaml_batt += "  - platform: wavin_ahc9000\n";
-    yaml_batt += "    wavin_ahc9000_id: wavin\n";
+    yaml_batt += "  - platform: wavinahc9000v3\n";
+    yaml_batt += "    wavinahc9000v3_id: wavin\n";
     yaml_batt += "    name: \"" + fname + " Battery\"\n";
     yaml_batt += "    channel: " + std::to_string((int) ch) + "\n";
     yaml_batt += "    type: battery\n";
@@ -839,8 +839,8 @@ void WavinAHC9000::generate_yaml_suggestion() {
   for (auto ch : active) {
     std::string fname = this->get_channel_friendly_name(ch);
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    yaml_temp += "  - platform: wavin_ahc9000\n";
-    yaml_temp += "    wavin_ahc9000_id: wavin\n";
+    yaml_temp += "  - platform: wavinahc9000v3\n";
+    yaml_temp += "    wavinahc9000v3_id: wavin\n";
     yaml_temp += "    name: \"" + fname + " Temperature\"\n";
     yaml_temp += "    channel: " + std::to_string((int) ch) + "\n";
     yaml_temp += "    type: temperature\n";
@@ -908,8 +908,8 @@ static std::string build_climate_yaml_for(const WavinAHC9000 *parent, const std:
   for (auto ch : chs) {
     std::string fname = parent->get_channel_friendly_name(ch);
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
+    y += "- platform: wavinahc9000v3\n";
+    y += "  wavinahc9000v3_id: wavin\n";
     y += "  name: \"" + fname + "\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
   }
@@ -922,8 +922,8 @@ static std::string build_battery_yaml_for(const WavinAHC9000 *parent, const std:
   for (auto ch : chs) {
     std::string fname = parent->get_channel_friendly_name(ch);
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
+    y += "- platform: wavinahc9000v3\n";
+    y += "  wavinahc9000v3_id: wavin\n";
     y += "  name: \"" + fname + " Battery\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     y += "  type: battery\n";
@@ -937,8 +937,8 @@ static std::string build_temperature_yaml_for(const WavinAHC9000 *parent, const 
   for (auto ch : chs) {
     std::string fname = parent->get_channel_friendly_name(ch);
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
+    y += "- platform: wavinahc9000v3\n";
+    y += "  wavinahc9000v3_id: wavin\n";
     y += "  name: \"" + fname + " Temperature\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     y += "  type: temperature\n";
@@ -951,8 +951,8 @@ static std::string build_floor_temperature_yaml_for(const WavinAHC9000 *parent, 
   for (auto ch : chs) {
     std::string fname = parent->get_channel_friendly_name(ch);
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
+    y += "- platform: wavinahc9000v3\n";
+    y += "  wavinahc9000v3_id: wavin\n";
     y += "  name: \"" + fname + " Floor Temperature\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     y += "  type: floor_temperature\n";
@@ -965,8 +965,8 @@ static std::string build_floor_min_temperature_yaml_for(const WavinAHC9000 *pare
   for (auto ch : chs) {
     std::string fname = parent->get_channel_friendly_name(ch);
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
+    y += "- platform: wavinahc9000v3\n";
+    y += "  wavinahc9000v3_id: wavin\n";
     y += "  name: \"" + fname + " Floor Min Temperature\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     y += "  type: floor_min_temperature\n";
@@ -979,8 +979,8 @@ static std::string build_floor_max_temperature_yaml_for(const WavinAHC9000 *pare
   for (auto ch : chs) {
     std::string fname = parent->get_channel_friendly_name(ch);
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
+    y += "- platform: wavinahc9000v3\n";
+    y += "  wavinahc9000v3_id: wavin\n";
     y += "  name: \"" + fname + " Floor Max Temperature\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     y += "  type: floor_max_temperature\n";
@@ -994,8 +994,8 @@ static std::string build_rssi_element_yaml_for(const WavinAHC9000 *parent, const
   for (auto ch : chs) {
     std::string fname = parent->get_channel_friendly_name(ch);
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
+    y += "- platform: wavinahc9000v3\n";
+    y += "  wavinahc9000v3_id: wavin\n";
     y += "  name: \"" + fname + " RSSI Element\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     y += "  type: rssi_element\n";
@@ -1009,8 +1009,8 @@ static std::string build_rssi_cu_yaml_for(const WavinAHC9000 *parent, const std:
   for (auto ch : chs) {
     std::string fname = parent->get_channel_friendly_name(ch);
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
+    y += "- platform: wavinahc9000v3\n";
+    y += "  wavinahc9000v3_id: wavin\n";
     y += "  name: \"" + fname + " RSSI Control Unit\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     y += "  type: rssi_cu\n";
@@ -1024,8 +1024,8 @@ static std::string build_child_lock_yaml_for(const WavinAHC9000 *parent, const s
   for (auto ch : chs) {
     std::string fname = parent->get_channel_friendly_name(ch);
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
+    y += "- platform: wavinahc9000v3\n";
+    y += "  wavinahc9000v3_id: wavin\n";
     y += "  name: \"" + fname + " Lock\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     // type defaults to child_lock, so we omit for brevity
@@ -1060,8 +1060,8 @@ static std::string build_group_climate_yaml_for(const WavinAHC9000 *parent, cons
       if (g.size() == 2) name = "Zone G " + std::to_string((int) g[0]) + "&" + std::to_string((int) g[1]);
       else name = "Zone G " + std::to_string((int) g.front()) + "-" + std::to_string((int) g.back());
     }
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
+    y += "- platform: wavinahc9000v3\n";
+    y += "  wavinahc9000v3_id: wavin\n";
     y += "  name: \"" + name + "\"\n";
     y += "  members: [";
     for (size_t i = 0; i < g.size(); i++) {
@@ -1097,8 +1097,8 @@ static std::string build_comfort_climate_yaml_for(const WavinAHC9000 *parent, co
   for (auto ch : chs) {
     std::string fname = parent->get_channel_friendly_name(ch);
     if (fname.empty()) fname = "Zone " + std::to_string((int) ch);
-    y += "- platform: wavin_ahc9000\n";
-    y += "  wavin_ahc9000_id: wavin\n";
+    y += "- platform: wavinahc9000v3\n";
+    y += "  wavinahc9000v3_id: wavin\n";
     y += "  name: \"" + fname + " Comfort\"\n";
     y += "  channel: " + std::to_string((int) ch) + "\n";
     y += "  use_floor_temperature: true\n";
@@ -1459,5 +1459,5 @@ void WavinZoneClimate::update_from_parent() {
   this->publish_state();
 }
 
-}  // namespace wavin_ahc9000
+}  // namespace wavinahc9000v3
 }  // namespace esphome
