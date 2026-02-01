@@ -201,6 +201,10 @@ void WavinAHC9000::update() {
           if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
             st.setpoint_c = this->raw_to_c(regs[0]);
             ESP_LOGD(TAG, "CH%u setpoint=%.1fC", ch_num, st.setpoint_c);
+            // Read Standby setpoint
+            if (this->read_registers(CAT_PACKED, ch_page, PACKED_STANDBY_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+              st.standby_setpoint_c = this->raw_to_c(regs[0]);
+            }
             // Read hysteresis (0.1°C units)
             if (this->read_registers(CAT_PACKED, ch_page, PACKED_HYSTERESIS, 1, regs) && regs.size() >= 1) {
               st.hysteresis_c = (float) regs[0] / 10.0f;
@@ -301,7 +305,21 @@ void WavinAHC9000::update() {
   this->publish_updates();
 }
 
-void WavinAHC9000::dump_config() { ESP_LOGCONFIG(TAG, "Wavin AHC9000 (UART test read)"); }
+void WavinAHC9000::dump_config() { ESP_LOGCONFIG(TAG, "Wavin AHC9000 Hub"); }
+
+void WavinSwitch::write_state(bool state) {
+  if (this->parent_ == nullptr) return;
+  if (this->type_ == CHILD_LOCK) {
+    this->parent_->write_channel_child_lock(this->channel_, state);
+  } else if (this->type_ == STANDBY) {
+    // Standby ON -> Mode OFF (Standby)
+    // Standby OFF -> Mode HEAT
+    auto mode = state ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+    this->parent_->write_channel_mode(this->channel_, mode);
+  }
+  // Optimistic publish; hub publish_updates() will correct after refresh.
+  this->publish_state(state);
+}
 
 void WavinAHC9000::add_channel_climate(WavinZoneClimate *c) { this->single_ch_climates_.push_back(c); }
 void WavinAHC9000::add_group_climate(WavinZoneClimate *c) { this->group_climates_.push_back(c); }
@@ -582,6 +600,18 @@ void WavinAHC9000::write_channel_setpoint(uint8_t channel, float celsius) {
   }
 }
 
+void WavinAHC9000::write_channel_standby_setpoint(uint8_t channel, float celsius) {
+  if (channel < 1 || channel > 16) return;
+  uint8_t page = (uint8_t) (channel - 1);
+  uint16_t raw = this->c_to_raw(celsius);
+  if (this->write_register(CAT_PACKED, page, PACKED_STANDBY_TEMPERATURE, raw)) {
+    this->channels_[channel].standby_setpoint_c = celsius;
+    // Schedule a quick refresh on next cycle
+    this->urgent_channels_.push_back(channel);
+    this->suspend_polling_until_ = millis() + 100;
+  }
+}
+
 void WavinAHC9000::write_group_setpoint(const std::vector<uint8_t> &members, float celsius) {
   for (auto ch : members) this->write_channel_setpoint(ch, celsius);
 }
@@ -822,6 +852,8 @@ void WavinAHC9000::publish_updates() {
     auto it = this->channels_.find(ch);
     if (it != this->channels_.end() && !std::isnan(it->second.setpoint_c)) {
       n->publish_state(it->second.setpoint_c);
+    if (it != this->channels_.end() && !std::isnan(it->second.standby_setpoint_c)) {
+      n->publish_state(it->second.standby_setpoint_c);
     }
   }
   for (auto &kv : this->hysteresis_numbers_) {
@@ -841,6 +873,16 @@ void WavinAHC9000::publish_updates() {
     auto it = this->channels_.find(ch);
     if (it != this->channels_.end()) {
       sw->publish_state(it->second.child_lock);
+    }
+  }
+  // Standby switches
+  for (auto &kv : this->standby_switches_) {
+    uint8_t ch = kv.first;
+    auto *sw = kv.second;
+    if (!sw) continue;
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end()) {
+      sw->publish_state(it->second.mode == climate::CLIMATE_MODE_OFF);
     }
   }
 }

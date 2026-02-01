@@ -22,7 +22,7 @@ namespace wavinahc9000v3 {
 // Forward declarations
 class WavinAHC9000;
 class WavinZoneClimate;
-class WavinChildLockSwitch;
+class WavinSwitch;
 
 class WavinSetpointNumber : public number::Number {
  public:
@@ -77,6 +77,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void add_standby_number(number::Number *n);
   void add_hysteresis_number(number::Number *n);
   void add_channel_child_lock_switch(uint8_t ch, switch_::Switch *s) { this->child_lock_switches_[ch] = s; }
+  void add_channel_standby_switch(uint8_t ch, switch_::Switch *s) { this->standby_switches_[ch] = s; }
   void add_active_channel(uint8_t ch);
 
   // Send commands
@@ -162,6 +163,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::map<uint8_t, number::Number *> hysteresis_numbers_;
   std::map<uint8_t, sensor::Sensor *> comfort_setpoint_sensors_;
   std::map<uint8_t, switch_::Switch *> child_lock_switches_;
+  std::map<uint8_t, switch_::Switch *> standby_switches_;
   text_sensor::TextSensor *software_version_sensor_{nullptr};
   text_sensor::TextSensor *hardware_version_sensor_{nullptr};
   text_sensor::TextSensor *device_name_sensor_{nullptr};
@@ -243,23 +245,18 @@ inline void WavinSetpointNumber::control(float value) {
   this->publish_state(value);
 }
 
-// Simple dedicated switch subclass for child lock control. Avoids relying on codegen lambdas
-// that reference a specific hub variable name. The state is optimistic; an urgent refresh
-// scheduled by write_channel_child_lock() will reconcile if the write failed.
-class WavinChildLockSwitch : public switch_::Switch {
+// Generic switch subclass for child lock and standby control.
+class WavinSwitch : public switch_::Switch {
  public:
+  enum Type { CHILD_LOCK, STANDBY };
   void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
   void set_channel(uint8_t ch) { this->channel_ = ch; }
+  void set_type(Type t) { this->type_ = t; }
  protected:
-  void write_state(bool state) override {
-    if (this->parent_ != nullptr) {
-      this->parent_->write_channel_child_lock(this->channel_, state);
-    }
-    // Optimistic publish; hub publish_updates() will correct after refresh.
-    this->publish_state(state);
-  }
+  void write_state(bool state) override;
   WavinAHC9000 *parent_{nullptr};
   uint8_t channel_{0};
+  Type type_{CHILD_LOCK};
 };
 
 // Inline helpers for configuring sensors
