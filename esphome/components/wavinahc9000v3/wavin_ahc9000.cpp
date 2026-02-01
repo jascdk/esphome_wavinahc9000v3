@@ -620,26 +620,33 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
   if (channel < 1 || channel > 16) return;
   uint8_t page = (uint8_t) (channel - 1);
   this->desired_mode_[channel] = mode;
-  // Always use strict baseline to 0x4000/0x4001 for reliable OFF/HEAT
+
+  // Try Read-Modify-Write first to preserve existing flags (Child Lock, Program, etc.)
   bool ok = false;
-  {
-    uint16_t strict_val = (uint16_t) (0x4000 | (mode == climate::CLIMATE_MODE_OFF ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL));
-    ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, strict_val);
-  }
-  if (!ok) {
-    // Fallback: read-modify-write full register (update only mode bits)
-    std::vector<uint16_t> regs;
-    if (this->read_registers(CAT_PACKED, page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
-      uint16_t current = regs[0];
-      // Prefer standard standby bits for OFF; otherwise use MANUAL
-      uint16_t new_bits = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
-      uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (new_bits & PACKED_CONFIGURATION_MODE_MASK));
-      ESP_LOGW(TAG, "WM fallback: PACKED_CONFIGURATION ch=%u cur=0x%04X next=0x%04X", (unsigned) channel, (unsigned) current, (unsigned) next);
+  std::vector<uint16_t> regs;
+  if (this->read_registers(CAT_PACKED, page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
+    uint16_t current = regs[0];
+    uint16_t new_bits = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
+    uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (new_bits & PACKED_CONFIGURATION_MODE_MASK));
+    if (next != current) {
       ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, next);
-  // No alternate OFF attempt to avoid special thermostat modes
+      if (ok) {
+        ESP_LOGD(TAG, "Mode RMW ch=%u: 0x%04X -> 0x%04X", (unsigned) channel, (unsigned) current, (unsigned) next);
+      }
     } else {
-      ESP_LOGW(TAG, "WM fallback: read PACKED_CONFIGURATION failed for ch=%u", (unsigned) channel);
+      ok = true;
     }
+  }
+
+  // Fallback to strict baseline if read failed
+  if (!ok) {
+    uint16_t strict_val = (uint16_t) (0x4000 | (mode == climate::CLIMATE_MODE_OFF ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL));
+    // Attempt to preserve child lock from cache
+    if (this->channels_[channel].child_lock) {
+      strict_val |= PACKED_CONFIGURATION_CHILD_LOCK_MASK;
+    }
+    ESP_LOGW(TAG, "Mode RMW failed, using strict write ch=%u val=0x%04X", (unsigned) channel, (unsigned) strict_val);
+    ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, strict_val);
   }
   if (ok) {
     this->channels_[channel].mode = (mode == climate::CLIMATE_MODE_OFF) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
