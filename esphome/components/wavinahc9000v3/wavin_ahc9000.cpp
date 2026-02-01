@@ -33,7 +33,14 @@ static uint16_t crc16(const uint8_t *frame, size_t len) {
   return temp;
 }
 
-void WavinAHC9000::setup() { ESP_LOGCONFIG(TAG, "Wavin AHC9000 hub setup"); }
+void WavinAHC9000::setup() { 
+  ESP_LOGCONFIG(TAG, "Wavin AHC9000 hub setup");
+  // Default to all 1..16 if none explicitly configured via YAML
+  if (this->active_channels_.empty()) {
+    this->active_channels_.reserve(16);
+    for (uint8_t ch = 1; ch <= 16; ch++) this->active_channels_.push_back(ch);
+  }
+}
 void WavinAHC9000::loop() {}
 
 void WavinAHC9000::set_channel_friendly_name(uint8_t channel, const std::string &name) {
@@ -149,12 +156,6 @@ void WavinAHC9000::update() {
   }
 
   // Round-robin staged reads across active channels; each advances one step per update
-  if (this->active_channels_.empty()) {
-    // Default to all 1..16 if none explicitly configured
-    this->active_channels_.reserve(16);
-    for (uint8_t ch = 1; ch <= 16; ch++) this->active_channels_.push_back(ch);
-  }
-
   for (uint8_t i = urgent_processed; i < this->poll_channels_per_cycle_ && !this->active_channels_.empty(); i++) {
     // Stability: Prevent WDT reset if bus is unresponsive
     if (millis() - start_update > 500) {
@@ -364,32 +365,32 @@ bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index,
   if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
   if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false); // back to RX ASAP
 
-    std::vector<uint8_t> buf;
-    buf.reserve(32);
+    uint8_t buf[260];
+    size_t buf_len = 0;
     uint32_t start = millis();
     while (millis() - start < this->receive_timeout_ms_) {
       while (this->available()) {
         int c = this->read();
         if (c < 0) break;
         // Sync: only start buffering if we see our address at pos 0
-        if (buf.empty()) {
-          if ((uint8_t)c == DEVICE_ADDR) buf.push_back((uint8_t)c);
+        if (buf_len == 0) {
+          if ((uint8_t)c == DEVICE_ADDR) buf[buf_len++] = (uint8_t)c;
         } else {
-          buf.push_back((uint8_t)c);
+          if (buf_len < sizeof(buf)) buf[buf_len++] = (uint8_t)c;
         }
 
-        if (buf.size() >= 5) {
+        if (buf_len >= 5) {
           // Basic sanity check on length byte (index 2) to avoid huge allocations
-          if (buf[2] > 250) { buf.clear(); continue; }
+          if (buf[2] > 250) { buf_len = 0; continue; }
           uint8_t expected = (uint8_t) (buf[2] + 5);
-          if (buf[0] == DEVICE_ADDR && buf[1] == FC_READ && buf.size() == expected) {
-            uint16_t rcrc = crc16(buf.data(), buf.size());
+          if (buf[0] == DEVICE_ADDR && buf[1] == FC_READ && buf_len == expected) {
+            uint16_t rcrc = crc16(buf, buf_len);
             if (rcrc != 0) {
               // CRC mismatch: retry unless last attempt
               if (attempt + 1 == IO_RETRY_ATTEMPTS) {
-                ESP_LOGW(TAG, "RX: CRC mismatch (len=%u) after %u attempts", (unsigned) buf.size(), (unsigned) IO_RETRY_ATTEMPTS);
+                ESP_LOGW(TAG, "RX: CRC mismatch (len=%u) after %u attempts", (unsigned) buf_len, (unsigned) IO_RETRY_ATTEMPTS);
               } else {
-                ESP_LOGD(TAG, "RX: CRC mismatch attempt %u (len=%u) -> retry", (unsigned) attempt + 1, (unsigned) buf.size());
+                ESP_LOGD(TAG, "RX: CRC mismatch attempt %u (len=%u) -> retry", (unsigned) attempt + 1, (unsigned) buf_len);
               }
               goto next_attempt; // break both loops, retry
             }
@@ -402,7 +403,7 @@ bool WavinAHC9000::read_registers(uint8_t category, uint8_t page, uint8_t index,
             return true;
           }
         }
-        if (buf.size() > 260) buf.clear(); // Safety cap
+        if (buf_len > 255) buf_len = 0; // Safety cap
       }
       App.feed_wdt();
       delay(1);
@@ -443,25 +444,25 @@ bool WavinAHC9000::write_register(uint8_t category, uint8_t page, uint8_t index,
   if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
   if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false);
 
-    std::vector<uint8_t> buf;
-    buf.reserve(32);
+    uint8_t buf[260];
+    size_t buf_len = 0;
     uint32_t start = millis();
     while (millis() - start < this->receive_timeout_ms_) {
       while (this->available()) {
         int c = this->read();
         if (c < 0) break;
         // Sync: only start buffering if we see our address at pos 0
-        if (buf.empty()) {
-          if ((uint8_t)c == DEVICE_ADDR) buf.push_back((uint8_t)c);
+        if (buf_len == 0) {
+          if ((uint8_t)c == DEVICE_ADDR) buf[buf_len++] = (uint8_t)c;
         } else {
-          buf.push_back((uint8_t)c);
+          if (buf_len < sizeof(buf)) buf[buf_len++] = (uint8_t)c;
         }
 
-        if (buf.size() >= 5) {
-          if (buf[2] > 250) { buf.clear(); continue; }
+        if (buf_len >= 5) {
+          if (buf[2] > 250) { buf_len = 0; continue; }
           uint8_t expected = (uint8_t) (buf[2] + 5);
-          if (buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE && buf.size() == expected) {
-            uint16_t rcrc = crc16(buf.data(), buf.size());
+          if (buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE && buf_len == expected) {
+            uint16_t rcrc = crc16(buf, buf_len);
             bool ok = (rcrc == 0);
             if (!ok) {
               if (attempt + 1 == IO_RETRY_ATTEMPTS) {
@@ -475,7 +476,7 @@ bool WavinAHC9000::write_register(uint8_t category, uint8_t page, uint8_t index,
             return true;
           }
         }
-        if (buf.size() > 260) buf.clear();
+        if (buf_len > 255) buf_len = 0;
       }
       App.feed_wdt();
       delay(1);
@@ -517,25 +518,25 @@ bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t
   if (this->tx_enable_pin_ != nullptr) this->tx_enable_pin_->digital_write(false);
   if (this->flow_control_pin_ != nullptr) this->flow_control_pin_->digital_write(false);
 
-    std::vector<uint8_t> buf;
-    buf.reserve(32);
+    uint8_t buf[260];
+    size_t buf_len = 0;
     uint32_t start = millis();
     while (millis() - start < this->receive_timeout_ms_) {
       while (this->available()) {
         int c = this->read();
         if (c < 0) break;
         // Sync: only start buffering if we see our address at pos 0
-        if (buf.empty()) {
-          if ((uint8_t)c == DEVICE_ADDR) buf.push_back((uint8_t)c);
+        if (buf_len == 0) {
+          if ((uint8_t)c == DEVICE_ADDR) buf[buf_len++] = (uint8_t)c;
         } else {
-          buf.push_back((uint8_t)c);
+          if (buf_len < sizeof(buf)) buf[buf_len++] = (uint8_t)c;
         }
 
-        if (buf.size() >= 5) {
-          if (buf[2] > 250) { buf.clear(); continue; }
+        if (buf_len >= 5) {
+          if (buf[2] > 250) { buf_len = 0; continue; }
           uint8_t expected = (uint8_t) (buf[2] + 5);
-          if (buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE_MASKED && buf.size() == expected) {
-            uint16_t rcrc = crc16(buf.data(), buf.size());
+          if (buf[0] == DEVICE_ADDR && buf[1] == FC_WRITE_MASKED && buf_len == expected) {
+            uint16_t rcrc = crc16(buf, buf_len);
             bool ok = (rcrc == 0);
             if (!ok) {
               if (attempt + 1 == IO_RETRY_ATTEMPTS) {
@@ -549,7 +550,7 @@ bool WavinAHC9000::write_masked_register(uint8_t category, uint8_t page, uint8_t
             return true;
           }
         }
-        if (buf.size() > 260) buf.clear();
+        if (buf_len > 255) buf_len = 0;
       }
       App.feed_wdt();
       delay(1);
