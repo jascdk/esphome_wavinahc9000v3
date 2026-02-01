@@ -633,7 +633,9 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
   if (this->read_registers(CAT_PACKED, page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
     uint16_t current = regs[0];
     uint16_t new_bits = (mode == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
-    uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (new_bits & PACKED_CONFIGURATION_MODE_MASK));
+    // Clear Program/Schedule bits (0x0018) when manually changing mode to prevent controller revert
+    uint16_t mask = PACKED_CONFIGURATION_MODE_MASK | PACKED_CONFIGURATION_PROGRAM_MASK;
+    uint16_t next = (uint16_t) ((current & ~mask) | (new_bits & PACKED_CONFIGURATION_MODE_MASK));
     if (next != current) {
       ok = this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, next);
       if (ok) {
