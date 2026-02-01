@@ -128,6 +128,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void query_device_info();
 
   void publish_updates();
+  bool process_channel_step(uint8_t ch_num, uint8_t &step);
 
   // Helpers
   float raw_to_c(float raw) const { return raw / this->temp_divisor_; }
