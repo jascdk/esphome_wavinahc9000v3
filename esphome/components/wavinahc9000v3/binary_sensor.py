@@ -26,3 +26,5 @@ async def to_code(config):
         cg.add(hub.add_channel_output_binary_sensor(config[CONF_CHANNEL], var))
     elif config[CONF_TYPE] == TYPE_PROBLEM:
         cg.add(hub.add_channel_problem_binary_sensor(config[CONF_CHANNEL], var))
+
+    cg.add(hub.add_active_channel(config[CONF_CHANNEL]))

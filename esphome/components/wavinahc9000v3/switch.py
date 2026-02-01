@@ -37,3 +37,5 @@ async def to_code(config):
         cg.add(hub.add_channel_child_lock_switch(ch, var))
     elif typ == "standby":
         cg.add(hub.add_channel_standby_switch(ch, var))
+
+    cg.add(hub.add_active_channel(ch))
