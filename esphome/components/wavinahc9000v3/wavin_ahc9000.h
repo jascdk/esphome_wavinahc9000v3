@@ -3,7 +3,6 @@
 #include "esphome/components/climate/climate.h"
 #include "esphome/components/uart/uart.h"
 #include "esphome/components/text_sensor/text_sensor.h"
-#include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/number/number.h"
 #include "esphome/core/component.h"
@@ -17,7 +16,6 @@
 namespace esphome {
 namespace sensor { class Sensor; }
 namespace text_sensor { class TextSensor; }
-namespace binary_sensor { class BinarySensor; }
 namespace switch_ { class Switch; }
 namespace wavinahc9000v3 {
 
@@ -99,8 +97,6 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void set_software_version_sensor(text_sensor::TextSensor *s) { this->software_version_sensor_ = s; }
   void set_hardware_version_sensor(text_sensor::TextSensor *s) { this->hardware_version_sensor_ = s; }
   void set_device_name_sensor(text_sensor::TextSensor *s) { this->device_name_sensor_ = s; }
-  // Debug helper to dump registers for a channel (to identify floor min/max addresses)
-  void dump_channel_floor_limits(uint8_t channel);
   bool is_channel_child_locked(uint8_t ch) const {
     auto it = this->channels_.find(ch);
     if (it == this->channels_.end()) return false;

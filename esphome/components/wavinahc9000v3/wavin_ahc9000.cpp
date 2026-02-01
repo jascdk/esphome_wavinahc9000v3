@@ -291,34 +291,6 @@ void WavinAHC9000::update() {
 }
 
 void WavinAHC9000::dump_config() { ESP_LOGCONFIG(TAG, "Wavin AHC9000 (UART test read)"); }
-void WavinAHC9000::dump_channel_floor_limits(uint8_t channel) {
-  if (channel < 1 || channel > 16) return;
-  uint8_t page = (uint8_t) (channel - 1);
-  std::vector<uint16_t> regs;
-  ESP_LOGI(TAG, "DUMP ch=%u PACKED indices 0x00..0x0F:", (unsigned) channel);
-  for (uint8_t idx = 0; idx <= 0x0F; idx++) {
-    if (this->read_registers(CAT_PACKED, page, idx, 1, regs) && regs.size() >= 1) {
-      ESP_LOGI(TAG, "  PACKED[%u]=0x%04X (%u)", (unsigned) idx, (unsigned) regs[0], (unsigned) regs[0]);
-    } else {
-      ESP_LOGI(TAG, "  PACKED[%u]=<err>", (unsigned) idx);
-    }
-  }
-  // Try elements if primary known
-  auto it = this->channels_.find(channel);
-  if (it != this->channels_.end() && it->second.primary_index > 0 && !it->second.all_tp_lost) {
-    uint8_t elem_page = (uint8_t) (it->second.primary_index - 1);
-    ESP_LOGI(TAG, "DUMP ch=%u ELEMENTS page=%u indices 0x00..0x10:", (unsigned) channel, (unsigned) elem_page);
-    for (uint8_t idx = 0; idx <= 0x10; idx++) {
-      if (this->read_registers(CAT_ELEMENTS, elem_page, idx, 1, regs) && regs.size() >= 1) {
-        ESP_LOGI(TAG, "  ELEM[%u]=0x%04X (%u)", (unsigned) idx, (unsigned) regs[0], (unsigned) regs[0]);
-      } else {
-        ESP_LOGI(TAG, "  ELEM[%u]=<err>", (unsigned) idx);
-      }
-    }
-  } else {
-    ESP_LOGW(TAG, "DUMP ch=%u: primary element unknown or TP lost; elements not dumped", (unsigned) channel);
-  }
-}
 
 void WavinAHC9000::add_channel_climate(WavinZoneClimate *c) { this->single_ch_climates_.push_back(c); }
 void WavinAHC9000::add_group_climate(WavinZoneClimate *c) { this->group_climates_.push_back(c); }
