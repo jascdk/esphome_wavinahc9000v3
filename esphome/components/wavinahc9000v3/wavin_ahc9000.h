@@ -253,7 +253,7 @@ class WavinSwitch : public switch_::Switch {
   enum Type { CHILD_LOCK, STANDBY };
   void set_parent(WavinAHC9000 *p) { this->parent_ = p; }
   void set_channel(uint8_t ch) { this->channel_ = ch; }
-  void set_type(Type t) { this->type_ = t; }
+  void set_type(uint8_t t) { this->type_ = (Type) t; }
  protected:
   void write_state(bool state) override;
   WavinAHC9000 *parent_{nullptr};
