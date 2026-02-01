@@ -42,7 +42,22 @@ void WavinAHC9000::setup() {
     for (uint8_t ch = 1; ch <= 16; ch++) this->active_channels_.push_back(ch);
   }
 }
-void WavinAHC9000::loop() {}
+
+void WavinAHC9000::loop() {
+  // Process the poll queue one step at a time to avoid blocking the main loop
+  if (this->poll_queue_.empty()) return;
+
+  uint8_t ch_num = this->poll_queue_.front();
+  uint8_t ch_page = (uint8_t) (ch_num - 1);
+  uint8_t &step = this->channel_step_[ch_page];
+
+  // Execute one step of the state machine
+  // If the step logic returns true, it means the channel is done (step wrapped to 0)
+  // If false, we keep the channel at the front to process the next step in the next loop() call
+  if (this->process_channel_step(ch_num, step)) {
+    this->poll_queue_.pop_front();
+  }
+}
 
 void WavinAHC9000::set_channel_friendly_name(uint8_t channel, const std::string &name) {
   if (channel < 1 || channel > 16) return;
@@ -57,260 +72,185 @@ std::string WavinAHC9000::get_channel_friendly_name(uint8_t channel) const {
 }
 
 void WavinAHC9000::update() {
-  uint32_t start_update = millis();
-  // If polling is temporarily suspended (after a write), skip until window expires
-  if (this->suspend_polling_until_ != 0 && millis() < this->suspend_polling_until_) {
-    ESP_LOGV(TAG, "Polling suspended for %u ms more", (unsigned) (this->suspend_polling_until_ - millis()));
-    return;
-  }
-
   // One-time query for device info (software version, etc.)
   if (!this->device_info_read_) {
     this->query_device_info();
     this->device_info_read_ = true;
   }
 
-  // Process any urgent channels first (scheduled due to a write)
-  std::vector<uint16_t> regs;
-  uint8_t urgent_processed = 0;
-  while (!this->urgent_channels_.empty() && urgent_processed < this->poll_channels_per_cycle_) {
-    // Stability: Prevent WDT reset if bus is unresponsive
-    if (millis() - start_update > 500) {
-      ESP_LOGW(TAG, "Update cycle budget exceeded (urgent), skipping remaining");
-      break;
-    }
-    uint8_t ch = this->urgent_channels_.front();
-    this->urgent_channels_.erase(this->urgent_channels_.begin());
-    uint8_t ch_page = (uint8_t) (ch - 1);
-    auto &st = this->channels_[ch];
-    // Perform a compact refresh sequence for the channel
-    if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
-      uint16_t raw_cfg = regs[0];
-      uint16_t mode_bits = raw_cfg & PACKED_CONFIGURATION_MODE_MASK;
-      bool is_off = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) || (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY_ALT);
-      st.mode = is_off ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
-      st.child_lock = (raw_cfg & PACKED_CONFIGURATION_CHILD_LOCK_MASK) != 0;
-      ESP_LOGD(TAG, "CH%u cfg=0x%04X mode=%s child_lock=%s", (unsigned) ch, (unsigned) raw_cfg, is_off ? "OFF" : "HEAT", st.child_lock?"Y":"N");
-      // Reconcile desired mode if pending and mismatch
-      auto it_des = this->desired_mode_.find(ch);
-      if (it_des != this->desired_mode_.end()) {
-        auto want = it_des->second;
-        if (want != st.mode) {
-          uint16_t current = raw_cfg;
-          // Enforce standard OFF bits or MANUAL
-          uint16_t new_bits = (want == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
-          uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (new_bits & PACKED_CONFIGURATION_MODE_MASK));
-          ESP_LOGW(TAG, "Reconciling mode for ch=%u cur=0x%04X next=0x%04X", (unsigned) ch, (unsigned) current, (unsigned) next);
-          if (this->write_register(CAT_PACKED, ch_page, PACKED_CONFIGURATION, next)) {
-            // Schedule another quick check
-            this->urgent_channels_.push_back(ch);
-            this->suspend_polling_until_ = millis() + 100;
-          }
-        } else {
-          // Achieved desired mode; clear desire
-          this->desired_mode_.erase(it_des);
-        }
-      }
-    }
-    if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
-      st.setpoint_c = this->raw_to_c(regs[0]);
-      // Read hysteresis (0.1°C units)
-      if (this->read_registers(CAT_PACKED, ch_page, PACKED_HYSTERESIS, 1, regs) && regs.size() >= 1) {
-        st.hysteresis_c = (float) regs[0] / 10.0f;
-      }
-    }
-    // Read floor min/max (read-only) during urgent refresh in one combined request (reduces bus load)
-    if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MIN_TEMPERATURE, 2, regs) && regs.size() >= 2) {
-      st.floor_min_c = this->raw_to_c(regs[0]);
-      st.floor_max_c = this->raw_to_c(regs[1]);
-    }
-    if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
-      bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
-      st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
-    }
-    if (!st.all_tp_lost && st.primary_index > 0) {
-      uint8_t elem_page = (uint8_t) (st.primary_index - 1);
-      if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
-        st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
-        if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
-          float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
-          // Basic plausibility filter (>1..90C) to avoid default/zero noise
-          if (ft > 1.0f && ft < 90.0f) {
-            st.floor_temp_c = ft;
-            st.has_floor_sensor = true;
-          } else {
-            st.floor_temp_c = NAN;
-          }
-        }
-        // Read RSSI data from element
-        if (this->read_registers(CAT_ELEMENTS, elem_page, ELEM_RSSI, 1, regs) && regs.size() >= 1) {
-          uint16_t rssi_reg = regs[0];
-          uint8_t rssiel_raw = (rssi_reg >> 8) & 0xFF;   // high byte: element side
-          uint8_t rssicu_raw = rssi_reg & 0xFF;          // low byte: control unit side
-          st.rssi_element_dbm = raw_rssi_to_dbm(rssiel_raw);
-          st.rssi_cu_dbm = raw_rssi_to_dbm(rssicu_raw);
-          ESP_LOGD(TAG, "CH%u RSSI element=%.1f dBm cu=%.1f dBm", (unsigned) ch, st.rssi_element_dbm, st.rssi_cu_dbm);
-        }
-      }
-    }
-    urgent_processed++;
+  // 1. Schedule urgent channels (from writes) to the FRONT of the queue
+  for (auto ch : this->urgent_channels_) {
+    // Reset step to ensure full fresh read
+    if (ch >= 1 && ch <= 16) this->channel_step_[ch - 1] = 0;
+    this->poll_queue_.push_front(ch);
   }
+  this->urgent_channels_.clear();
 
-  // Round-robin staged reads across active channels; each advances one step per update
-  for (uint8_t i = urgent_processed; i < this->poll_channels_per_cycle_ && !this->active_channels_.empty(); i++) {
-    // Stability: Prevent WDT reset if bus is unresponsive
-    if (millis() - start_update > 500) {
-      ESP_LOGW(TAG, "Update cycle budget exceeded (poll), skipping remaining");
-      break;
-    }
-    // Wrap active index
+  // 2. Schedule round-robin channels to the BACK of the queue
+  if (this->active_channels_.empty()) return;
+
+  for (uint8_t i = 0; i < this->poll_channels_per_cycle_; i++) {
     if (this->next_active_index_ >= this->active_channels_.size()) this->next_active_index_ = 0;
-    uint8_t ch_num = this->active_channels_[this->next_active_index_]; // 1..16
-    uint8_t ch_page = (uint8_t) (ch_num - 1);
-    auto &st = this->channels_[ch_num];
-    uint8_t &step = this->channel_step_[ch_page];
-
-    // Attempt to complete the full read sequence (steps 0..4) for this channel in one go
-    // to ensure data consistency and faster population, provided we have time budget.
-    int steps_run = 0;
-    while (steps_run < 5) {
-      if (millis() - start_update > 500) break; // Respect time budget
-      switch (step) {
-        case 0: {
-          if (this->read_registers(CAT_CHANNELS, ch_page, CH_PRIMARY_ELEMENT, 1, regs) && regs.size() >= 1) {
-            uint16_t v = regs[0];
-            st.primary_index = v & CH_PRIMARY_ELEMENT_ELEMENT_MASK;
-            st.all_tp_lost = (v & CH_PRIMARY_ELEMENT_ALL_TP_LOST_MASK) != 0;
-            ESP_LOGD(TAG, "CH%u primary elem=%u lost=%s", ch_num, (unsigned) st.primary_index, st.all_tp_lost ? "Y" : "N");
-          } else {
-            ESP_LOGW(TAG, "CH%u: primary element read failed", ch_num);
-          }
-          step = 1;
-          break;
-        }
-        case 1: {
-          if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
-            uint16_t raw_cfg = regs[0];
-            uint16_t mode_bits = raw_cfg & PACKED_CONFIGURATION_MODE_MASK;
-            bool is_off = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) || (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY_ALT);
-            st.mode = is_off ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
-            st.child_lock = (raw_cfg & PACKED_CONFIGURATION_CHILD_LOCK_MASK) != 0;
-            ESP_LOGD(TAG, "CH%u cfg=0x%04X mode=%s child_lock=%s", ch_num, (unsigned) raw_cfg, is_off ? "OFF" : "HEAT", st.child_lock?"Y":"N");
-          } else {
-            ESP_LOGW(TAG, "CH%u: mode read failed", ch_num);
-          }
-          step = 2;
-          break;
-        }
-        case 2: {
-          if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
-            st.setpoint_c = this->raw_to_c(regs[0]);
-            ESP_LOGD(TAG, "CH%u setpoint=%.1fC", ch_num, st.setpoint_c);
-            // Read Standby setpoint
-            if (this->read_registers(CAT_PACKED, ch_page, PACKED_STANDBY_TEMPERATURE, 1, regs) && regs.size() >= 1) {
-              st.standby_setpoint_c = this->raw_to_c(regs[0]);
-            }
-            // Read hysteresis (0.1°C units)
-            if (this->read_registers(CAT_PACKED, ch_page, PACKED_HYSTERESIS, 1, regs) && regs.size() >= 1) {
-              st.hysteresis_c = (float) regs[0] / 10.0f;
-            }
-          } else {
-            ESP_LOGW(TAG, "CH%u: setpoint read failed", ch_num);
-          }
-          step = 3;
-          break;
-        }
-        case 3: {
-          // Read floor min+max together (contiguous) to reduce transactions
-          if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MIN_TEMPERATURE, 2, regs) && regs.size() >= 2) {
-            st.floor_min_c = this->raw_to_c(regs[0]);
-            st.floor_max_c = this->raw_to_c(regs[1]);
-          }
-          if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
-            bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
-            st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
-            ESP_LOGD(TAG, "CH%u action=%s", ch_num, heating ? "HEATING" : "IDLE");
-          } else {
-            ESP_LOGW(TAG, "CH%u: action read failed", ch_num);
-          }
-          step = 4;
-          break;
-        }
-        case 4: {
-          if (!st.all_tp_lost && st.primary_index > 0) {
-            uint8_t elem_page = (uint8_t) (st.primary_index - 1);
-            if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
-              st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
-              if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
-                float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
-                if (ft > 1.0f && ft < 90.0f) {
-                  st.floor_temp_c = ft;
-                  st.has_floor_sensor = true;
-                } else {
-                  st.floor_temp_c = NAN;
-                }
-              }
-              ESP_LOGD(TAG, "CH%u current=%.1fC", ch_num, st.current_temp_c);
-              // Publish to per-channel temperature sensor if configured
-              auto it_t = this->temperature_sensors_.find(ch_num);
-              if (it_t != this->temperature_sensors_.end() && it_t->second != nullptr && !std::isnan(st.current_temp_c)) {
-                it_t->second->publish_state(st.current_temp_c);
-              }
-              // Floor sensor publish (on staged read) if configured
-              auto it_ft = this->floor_temperature_sensors_.find(ch_num);
-              if (it_ft != this->floor_temperature_sensors_.end() && it_ft->second != nullptr && !std::isnan(st.floor_temp_c)) {
-                it_ft->second->publish_state(st.floor_temp_c);
-              }
-              // Battery status if available (0..10 scale)
-              if (regs.size() > ELEM_BATTERY_STATUS) {
-                uint16_t raw = regs[ELEM_BATTERY_STATUS];
-                uint8_t steps = (raw > 10) ? 10 : (uint8_t) raw;
-                uint8_t pct = (uint8_t) (steps * 10);
-                st.battery_pct = pct;
-                auto it = this->battery_sensors_.find(ch_num);
-                if (it != this->battery_sensors_.end() && it->second != nullptr) {
-                  it->second->publish_state((float) pct);
-                }
-              }
-              // Read RSSI data from element
-              if (this->read_registers(CAT_ELEMENTS, elem_page, ELEM_RSSI, 1, regs) && regs.size() >= 1) {
-                uint16_t rssi_reg = regs[0];
-                uint8_t rssiel_raw = (rssi_reg >> 8) & 0xFF;   // high byte: element side
-                uint8_t rssicu_raw = rssi_reg & 0xFF;          // low byte: control unit side
-                st.rssi_element_dbm = raw_rssi_to_dbm(rssiel_raw);
-                st.rssi_cu_dbm = raw_rssi_to_dbm(rssicu_raw);
-                ESP_LOGD(TAG, "CH%u RSSI element=%.1f dBm cu=%.1f dBm", ch_num, st.rssi_element_dbm, st.rssi_cu_dbm);
-                // Publish RSSI sensors if configured
-                auto it_rssi_el = this->rssi_element_sensors_.find(ch_num);
-                if (it_rssi_el != this->rssi_element_sensors_.end() && it_rssi_el->second != nullptr) {
-                  it_rssi_el->second->publish_state(st.rssi_element_dbm);
-                }
-                auto it_rssi_cu = this->rssi_cu_sensors_.find(ch_num);
-                if (it_rssi_cu != this->rssi_cu_sensors_.end() && it_rssi_cu->second != nullptr) {
-                  it_rssi_cu->second->publish_state(st.rssi_cu_dbm);
-                }
-              }
-            } else {
-              ESP_LOGW(TAG, "CH%u: element temp read failed", ch_num);
-            }
-          } else {
-            st.current_temp_c = NAN;
-          }
-          step = 0;
-          break;
-        }
-      }
-      steps_run++;
-      // If step wrapped back to 0, we completed the sequence for this channel
-      if (step == 0) break;
+    uint8_t ch = this->active_channels_[this->next_active_index_];
+    
+    // Avoid duplicates in queue to prevent backlog
+    bool already_queued = false;
+    for (auto q_ch : this->poll_queue_) { if (q_ch == ch) { already_queued = true; break; } }
+    
+    if (!already_queued) {
+      this->poll_queue_.push_back(ch);
     }
-
-  // advance to next active channel
-  this->next_active_index_ = (uint8_t) ((this->next_active_index_ + 1) % this->active_channels_.size());
+    
+    this->next_active_index_++;
   }
 
   // publish once per cycle
   this->publish_updates();
+}
+
+// Helper to process one step of the state machine for a channel
+// Returns true if the channel cycle is complete (step wrapped to 0)
+bool WavinAHC9000::process_channel_step(uint8_t ch_num, uint8_t &step) {
+  uint8_t ch_page = (uint8_t) (ch_num - 1);
+  auto &st = this->channels_[ch_num];
+  std::vector<uint16_t> regs;
+
+  switch (step) {
+    case 0: {
+      if (this->read_registers(CAT_CHANNELS, ch_page, CH_PRIMARY_ELEMENT, 1, regs) && regs.size() >= 1) {
+        uint16_t v = regs[0];
+        st.primary_index = v & CH_PRIMARY_ELEMENT_ELEMENT_MASK;
+        st.all_tp_lost = (v & CH_PRIMARY_ELEMENT_ALL_TP_LOST_MASK) != 0;
+        ESP_LOGD(TAG, "CH%u primary elem=%u lost=%s", ch_num, (unsigned) st.primary_index, st.all_tp_lost ? "Y" : "N");
+      } else {
+        ESP_LOGW(TAG, "CH%u: primary element read failed", ch_num);
+      }
+      step = 1;
+      break;
+    }
+    case 1: {
+      if (this->read_registers(CAT_PACKED, ch_page, PACKED_CONFIGURATION, 1, regs) && regs.size() >= 1) {
+        uint16_t raw_cfg = regs[0];
+        uint16_t mode_bits = raw_cfg & PACKED_CONFIGURATION_MODE_MASK;
+        bool is_off = (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY) || (mode_bits == PACKED_CONFIGURATION_MODE_STANDBY_ALT);
+        st.mode = is_off ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+        st.child_lock = (raw_cfg & PACKED_CONFIGURATION_CHILD_LOCK_MASK) != 0;
+        ESP_LOGD(TAG, "CH%u cfg=0x%04X mode=%s child_lock=%s", ch_num, (unsigned) raw_cfg, is_off ? "OFF" : "HEAT", st.child_lock?"Y":"N");
+        
+        // Reconcile desired mode if pending and mismatch (moved from urgent block)
+        auto it_des = this->desired_mode_.find(ch_num);
+        if (it_des != this->desired_mode_.end()) {
+          auto want = it_des->second;
+          if (want != st.mode) {
+            uint16_t current = raw_cfg;
+            uint16_t new_bits = (want == climate::CLIMATE_MODE_OFF) ? PACKED_CONFIGURATION_MODE_STANDBY : PACKED_CONFIGURATION_MODE_MANUAL;
+            uint16_t next = (uint16_t) ((current & ~PACKED_CONFIGURATION_MODE_MASK) | (new_bits & PACKED_CONFIGURATION_MODE_MASK));
+            ESP_LOGW(TAG, "Reconciling mode for ch=%u cur=0x%04X next=0x%04X", (unsigned) ch_num, (unsigned) current, (unsigned) next);
+            if (this->write_register(CAT_PACKED, ch_page, PACKED_CONFIGURATION, next)) {
+              // Schedule immediate re-check by pushing to front of queue
+              this->poll_queue_.push_front(ch_num);
+              step = 0; // Restart scan for this channel
+              return false; // Not done
+            }
+          } else {
+            this->desired_mode_.erase(it_des);
+          }
+        }
+      } else {
+        ESP_LOGW(TAG, "CH%u: mode read failed", ch_num);
+      }
+      step = 2;
+      break;
+    }
+    case 2: {
+      if (this->read_registers(CAT_PACKED, ch_page, PACKED_MANUAL_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+        st.setpoint_c = this->raw_to_c(regs[0]);
+        ESP_LOGD(TAG, "CH%u setpoint=%.1fC", ch_num, st.setpoint_c);
+        if (this->read_registers(CAT_PACKED, ch_page, PACKED_STANDBY_TEMPERATURE, 1, regs) && regs.size() >= 1) {
+          st.standby_setpoint_c = this->raw_to_c(regs[0]);
+        }
+        if (this->read_registers(CAT_PACKED, ch_page, PACKED_HYSTERESIS, 1, regs) && regs.size() >= 1) {
+          st.hysteresis_c = (float) regs[0] / 10.0f;
+        }
+      } else {
+        ESP_LOGW(TAG, "CH%u: setpoint read failed", ch_num);
+      }
+      step = 3;
+      break;
+    }
+    case 3: {
+      if (this->read_registers(CAT_PACKED, ch_page, PACKED_FLOOR_MIN_TEMPERATURE, 2, regs) && regs.size() >= 2) {
+        st.floor_min_c = this->raw_to_c(regs[0]);
+        st.floor_max_c = this->raw_to_c(regs[1]);
+      }
+      if (this->read_registers(CAT_CHANNELS, ch_page, CH_TIMER_EVENT, 1, regs) && regs.size() >= 1) {
+        bool heating = (regs[0] & CH_TIMER_EVENT_OUTP_ON_MASK) != 0;
+        st.action = heating ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
+        ESP_LOGD(TAG, "CH%u action=%s", ch_num, heating ? "HEATING" : "IDLE");
+      } else {
+        ESP_LOGW(TAG, "CH%u: action read failed", ch_num);
+      }
+      step = 4;
+      break;
+    }
+    case 4: {
+      if (!st.all_tp_lost && st.primary_index > 0) {
+        uint8_t elem_page = (uint8_t) (st.primary_index - 1);
+        if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
+          st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
+          if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
+            float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
+            if (ft > 1.0f && ft < 90.0f) {
+              st.floor_temp_c = ft;
+              st.has_floor_sensor = true;
+            } else {
+              st.floor_temp_c = NAN;
+            }
+          }
+          ESP_LOGD(TAG, "CH%u current=%.1fC", ch_num, st.current_temp_c);
+          
+          // Publish sensors immediately
+          auto it_t = this->temperature_sensors_.find(ch_num);
+          if (it_t != this->temperature_sensors_.end() && it_t->second != nullptr && !std::isnan(st.current_temp_c)) {
+            it_t->second->publish_state(st.current_temp_c);
+          }
+          auto it_ft = this->floor_temperature_sensors_.find(ch_num);
+          if (it_ft != this->floor_temperature_sensors_.end() && it_ft->second != nullptr && !std::isnan(st.floor_temp_c)) {
+            it_ft->second->publish_state(st.floor_temp_c);
+          }
+          if (regs.size() > ELEM_BATTERY_STATUS) {
+            uint16_t raw = regs[ELEM_BATTERY_STATUS];
+            uint8_t steps = (raw > 10) ? 10 : (uint8_t) raw;
+            st.battery_pct = (uint8_t) (steps * 10);
+            auto it = this->battery_sensors_.find(ch_num);
+            if (it != this->battery_sensors_.end() && it->second != nullptr) {
+              it->second->publish_state((float) st.battery_pct);
+            }
+          }
+          if (this->read_registers(CAT_ELEMENTS, elem_page, ELEM_RSSI, 1, regs) && regs.size() >= 1) {
+            uint16_t rssi_reg = regs[0];
+            st.rssi_element_dbm = raw_rssi_to_dbm((rssi_reg >> 8) & 0xFF);
+            st.rssi_cu_dbm = raw_rssi_to_dbm(rssi_reg & 0xFF);
+            auto it_rssi_el = this->rssi_element_sensors_.find(ch_num);
+            if (it_rssi_el != this->rssi_element_sensors_.end() && it_rssi_el->second != nullptr) {
+              it_rssi_el->second->publish_state(st.rssi_element_dbm);
+            }
+            auto it_rssi_cu = this->rssi_cu_sensors_.find(ch_num);
+            if (it_rssi_cu != this->rssi_cu_sensors_.end() && it_rssi_cu->second != nullptr) {
+              it_rssi_cu->second->publish_state(st.rssi_cu_dbm);
+            }
+          }
+        } else {
+          ESP_LOGW(TAG, "CH%u: element temp read failed", ch_num);
+        }
+      } else {
+        st.current_temp_c = NAN;
+      }
+      step = 0;
+      break;
+    }
+  }
+  return (step == 0);
 }
 
 void WavinAHC9000::dump_config() { ESP_LOGCONFIG(TAG, "Wavin AHC9000 Hub"); }
@@ -603,8 +543,7 @@ void WavinAHC9000::write_channel_setpoint(uint8_t channel, float celsius) {
   if (this->write_register(CAT_PACKED, page, PACKED_MANUAL_TEMPERATURE, raw)) {
     this->channels_[channel].setpoint_c = celsius;
   // Schedule a quick refresh on next cycle and briefly suspend normal polling to avoid collisions
-  this->urgent_channels_.push_back(channel);
-  this->suspend_polling_until_ = millis() + 100; // 100 ms guard
+    this->urgent_channels_.push_back(channel);
   }
 }
 
@@ -616,7 +555,6 @@ void WavinAHC9000::write_channel_standby_setpoint(uint8_t channel, float celsius
     this->channels_[channel].standby_setpoint_c = celsius;
     // Schedule a quick refresh on next cycle
     this->urgent_channels_.push_back(channel);
-    this->suspend_polling_until_ = millis() + 100;
   }
 }
 
@@ -661,7 +599,6 @@ void WavinAHC9000::write_channel_mode(uint8_t channel, climate::ClimateMode mode
   if (ok) {
     this->channels_[channel].mode = (mode == climate::CLIMATE_MODE_OFF) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
     this->urgent_channels_.push_back(channel);
-    this->suspend_polling_until_ = millis() + 100; // 100 ms guard
   } else {
     ESP_LOGW(TAG, "Mode write failed for ch=%u", (unsigned) channel);
   }
@@ -688,7 +625,6 @@ void WavinAHC9000::write_channel_child_lock(uint8_t channel, bool enable) {
   if (this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, next)) {
     this->channels_[channel].child_lock = enable;
     this->urgent_channels_.push_back(channel);
-    this->suspend_polling_until_ = millis() + 100;
     ESP_LOGI(TAG, "Child lock: set ch=%u -> %s (0x%04X)", (unsigned) channel, enable?"ENABLED":"DISABLED", (unsigned) next);
   } else {
     ESP_LOGW(TAG, "Child lock: write failed ch=%u", (unsigned) channel);
@@ -705,7 +641,6 @@ void WavinAHC9000::write_channel_floor_min_temperature(uint8_t channel, float ce
   if (this->write_register(CAT_PACKED, page, PACKED_FLOOR_MIN_TEMPERATURE, raw)) {
     this->channels_[channel].floor_min_c = celsius;
     this->urgent_channels_.push_back(channel);
-    this->suspend_polling_until_ = millis() + 100;
   }
 }
 
@@ -718,7 +653,6 @@ void WavinAHC9000::write_channel_floor_max_temperature(uint8_t channel, float ce
   if (this->write_register(CAT_PACKED, page, PACKED_FLOOR_MAX_TEMPERATURE, raw)) {
     this->channels_[channel].floor_max_c = celsius;
     this->urgent_channels_.push_back(channel);
-    this->suspend_polling_until_ = millis() + 100;
   }
 }
 
@@ -733,7 +667,6 @@ void WavinAHC9000::write_channel_hysteresis(uint8_t channel, float celsius) {
   if (this->write_register(CAT_PACKED, page, PACKED_HYSTERESIS, raw)) {
     this->channels_[channel].hysteresis_c = celsius;
     this->urgent_channels_.push_back(channel);
-    this->suspend_polling_until_ = millis() + 100;
   } else {
     ESP_LOGW(TAG, "Hysteresis write failed for ch=%u", (unsigned) channel);
   }
@@ -762,7 +695,6 @@ void WavinAHC9000::normalize_channel_config(uint8_t channel, bool off) {
   if (this->write_register(CAT_PACKED, page, PACKED_CONFIGURATION, value)) {
     ESP_LOGW(TAG, "Normalize (strict) applied: ch=%u -> 0x%04X", (unsigned) channel, (unsigned) value);
     this->urgent_channels_.push_back(channel);
-    this->suspend_polling_until_ = millis() + 100;
   } else {
     ESP_LOGW(TAG, "Normalize (strict) failed: write not acknowledged for ch=%u", (unsigned) channel);
   }

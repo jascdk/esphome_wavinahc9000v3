@@ -12,6 +12,7 @@
 #include <map>
 #include <set>
 #include <cmath>
+#include <deque>
 #include <string>
 
 namespace esphome {
@@ -177,6 +178,7 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   text_sensor::TextSensor *device_name_sensor_{nullptr};
   std::vector<std::string> channel_friendly_names_; // 1-based index mapping (size >=17)
   std::vector<uint8_t> active_channels_;
+  std::deque<uint8_t> poll_queue_;
   std::map<uint8_t, climate::ClimateMode> desired_mode_; // desired mode to reconcile after refresh
   std::set<uint8_t> strict_mode_channels_; // channels opting into strict baseline writes
 
