@@ -2,6 +2,7 @@
 #include "esphome/core/application.h"
 #include "esphome/core/log.h"
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/components/binary_sensor/binary_sensor.h"
 #include <vector>
 #include <cmath>
 #include <algorithm>
@@ -897,6 +898,26 @@ void WavinAHC9000::publish_updates() {
     auto it = this->channels_.find(ch);
     if (it != this->channels_.end()) {
       sw->publish_state(it->second.mode == climate::CLIMATE_MODE_OFF);
+    }
+  }
+  // Output binary sensors (Valve open/closed)
+  for (auto &kv : this->output_binary_sensors_) {
+    uint8_t ch = kv.first;
+    auto *bs = kv.second;
+    if (!bs) continue;
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end()) {
+      bs->publish_state(it->second.action == climate::CLIMATE_ACTION_HEATING);
+    }
+  }
+  // Problem binary sensors (TP Lost)
+  for (auto &kv : this->problem_binary_sensors_) {
+    uint8_t ch = kv.first;
+    auto *bs = kv.second;
+    if (!bs) continue;
+    auto it = this->channels_.find(ch);
+    if (it != this->channels_.end()) {
+      bs->publish_state(it->second.all_tp_lost);
     }
   }
 }

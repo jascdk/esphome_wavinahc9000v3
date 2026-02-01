@@ -5,6 +5,7 @@
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/number/number.h"
+#include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/core/component.h"
 
 #include <vector>
@@ -17,6 +18,7 @@ namespace esphome {
 namespace sensor { class Sensor; }
 namespace text_sensor { class TextSensor; }
 namespace switch_ { class Switch; }
+namespace binary_sensor { class BinarySensor; }
 namespace wavinahc9000v3 {
 
 // Forward declarations
@@ -78,6 +80,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   void add_hysteresis_number(number::Number *n);
   void add_channel_child_lock_switch(uint8_t ch, switch_::Switch *s) { this->child_lock_switches_[ch] = s; }
   void add_channel_standby_switch(uint8_t ch, switch_::Switch *s) { this->standby_switches_[ch] = s; }
+  void add_channel_output_binary_sensor(uint8_t ch, binary_sensor::BinarySensor *s) { this->output_binary_sensors_[ch] = s; }
+  void add_channel_problem_binary_sensor(uint8_t ch, binary_sensor::BinarySensor *s) { this->problem_binary_sensors_[ch] = s; }
   void add_active_channel(uint8_t ch);
 
   // Send commands
@@ -166,6 +170,8 @@ class WavinAHC9000 : public PollingComponent, public uart::UARTDevice {
   std::map<uint8_t, sensor::Sensor *> comfort_setpoint_sensors_;
   std::map<uint8_t, switch_::Switch *> child_lock_switches_;
   std::map<uint8_t, switch_::Switch *> standby_switches_;
+  std::map<uint8_t, binary_sensor::BinarySensor *> output_binary_sensors_;
+  std::map<uint8_t, binary_sensor::BinarySensor *> problem_binary_sensors_;
   text_sensor::TextSensor *software_version_sensor_{nullptr};
   text_sensor::TextSensor *hardware_version_sensor_{nullptr};
   text_sensor::TextSensor *device_name_sensor_{nullptr};
