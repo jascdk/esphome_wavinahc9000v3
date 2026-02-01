@@ -850,8 +850,6 @@ void WavinAHC9000::publish_updates() {
     auto *n = kv.second;
     if (!n) continue;
     auto it = this->channels_.find(ch);
-    if (it != this->channels_.end() && !std::isnan(it->second.setpoint_c)) {
-      n->publish_state(it->second.setpoint_c);
     if (it != this->channels_.end() && !std::isnan(it->second.standby_setpoint_c)) {
       n->publish_state(it->second.standby_setpoint_c);
     }
