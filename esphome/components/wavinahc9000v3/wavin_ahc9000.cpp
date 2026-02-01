@@ -117,7 +117,6 @@ void WavinAHC9000::update() {
       uint8_t elem_page = (uint8_t) (st.primary_index - 1);
       if (this->read_registers(CAT_ELEMENTS, elem_page, 0x00, 11, regs) && regs.size() > ELEM_AIR_TEMPERATURE) {
         st.current_temp_c = this->raw_to_c(regs[ELEM_AIR_TEMPERATURE]);
-        this->yaml_elem_read_mask_ |= (1u << (ch - 1));
         if (regs.size() > ELEM_FLOOR_TEMPERATURE) {
           float ft = this->raw_to_c(regs[ELEM_FLOOR_TEMPERATURE]);
           // Basic plausibility filter (>1..90C) to avoid default/zero noise
