@@ -168,8 +168,11 @@ void WavinAHC9000::update() {
     auto &st = this->channels_[ch_num];
     uint8_t &step = this->channel_step_[ch_page];
 
-    // Two steps per update to surface values faster
-    for (int s = 0; s < 2; s++) {
+    // Attempt to complete the full read sequence (steps 0..4) for this channel in one go
+    // to ensure data consistency and faster population, provided we have time budget.
+    int steps_run = 0;
+    while (steps_run < 5) {
+      if (millis() - start_update > 500) break; // Respect time budget
       switch (step) {
         case 0: {
           if (this->read_registers(CAT_CHANNELS, ch_page, CH_PRIMARY_ELEMENT, 1, regs) && regs.size() >= 1) {
@@ -295,6 +298,9 @@ void WavinAHC9000::update() {
           break;
         }
       }
+      steps_run++;
+      // If step wrapped back to 0, we completed the sequence for this channel
+      if (step == 0) break;
     }
 
   // advance to next active channel
